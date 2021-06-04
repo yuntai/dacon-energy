@@ -10,7 +10,7 @@ parser.add_argument('--model', '-m', type=str, default='./models/model_3_42_3.js
 parser.add_argument('--dataroot', type=str, default='./data')
 args = parser.parse_args()
 
-num, seed, nweek = map(int, common.get_model_param(args.model_fn))
+num, seed, nweek = map(int, common.get_model_param(args.model))
 X_train, X_test, y_train, y_test, target_scaler, num_lag_feats = common.prep(args.dataroot, nweek, num)
 
 lag_columns = [f for f in X_train.columns if "lag" in f]
@@ -23,7 +23,7 @@ for lag in feature_lags:
     X_test.loc[idx, f"lag_{lag}"] = np.nan
 
 model = xgb.XGBRegressor()
-model.load_model(args.model_fn)
+model.load_model(args.model)
 
 
 __pred = lambda ix: model.predict(X_test.iloc[ix].values[None,:])[0]

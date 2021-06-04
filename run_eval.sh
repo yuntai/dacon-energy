@@ -1,4 +1,4 @@
-set -uo pipefail
+set -euo pipefail
 s=$(ls -v models/*.json|xargs -I{} basename {}|cut -d'_' -f2|head -1)
 e=$(ls -v models/*.json|xargs -I{} basename {}|cut -d'_' -f2|tail -1)
 echo $s~$e
