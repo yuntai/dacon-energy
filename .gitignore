@@ -1,3 +1,4 @@
-models
-data
+models/
+data/
 __pycache__
+res/

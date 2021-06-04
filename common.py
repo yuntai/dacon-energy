@@ -4,11 +4,13 @@ from sklearn.preprocessing import StandardScaler
 from statsmodels.tsa.stattools import pacf
 from sklearn.model_selection import train_test_split
 import pathlib
+import os
 
 def get_model_fn(args):
     return f"model_{args.num}_{args.seed}_{args.nweek}.json"
 
 def get_model_param(fn):
+    fn = os.path.basename(fn)
     num, seed, nweek = fn.split('.')[0].split('_')[1:]
     return num, seed, nweek
 

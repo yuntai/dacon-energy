@@ -6,20 +6,17 @@ from common import forecast_multi_recursive
 from common import smape
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--model_fn', type=str, default='models/model_3_42_3.json')
+parser.add_argument('--model_fn', type=str, default='./models/model_2_42_3.json')
 parser.add_argument('--dataroot', type=str, default='./data')
 args = parser.parse_args()
 
 num, seed, nweek = map(int, common.get_model_param(args.model_fn))
-print(f"{num=}, {seed=}, {nweek=}")
-X_train, X_test, y_train, y_test, target_scaler = common.prep(args.dataroot, nweek, num)
+X_train, X_test, y_train, y_test, target_scaler, num_lag_feats = common.prep(args.dataroot, nweek, num)
 
 lag_columns = [f for f in X_train.columns if "lag" in f]
 feature_lags = [int(f.split("_")[1]) for f in X_train.columns if "lag" in f]
 assert 1 in feature_lags
 lag_col_ixs = [list(X_train.columns).index(col) for col in lag_columns]
-
-assert max(feature_lags) > X_test.shape[1]
 
 for lag in feature_lags:
     idx = X_test.iloc[lag:].index
@@ -42,5 +39,11 @@ for row_ix in range(1, X_test.shape[0]):
     pred = __pred(row_ix)
     preds.append(pred)
 
-preds = target_scaler.inverse_transform(np.array(preds))
-print(smape(preds, target_scaler.inverse_transform(y_test.values.squeeze())))
+preds = np.array(preds)
+score = smape(target_scaler.inverse_transform(preds), target_scaler.inverse_transform(y_test.values.squeeze()))
+print(f"{num},{nweek},{seed},{score}")
+res = y_test.to_frame()
+
+res.columns = ['gt']
+res['pred'] = preds
+res[res.columns] = target_scaler.inverse_transform(res)
