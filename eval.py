@@ -3,7 +3,7 @@ import common
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--model', type=str, default='models/model_2_42_3.json')
+parser.add_argument('--model', '-m', type=str, default='models/model_2_42_3.json')
 parser.add_argument('--dataroot', type=str, default='./data')
 args = parser.parse_args()
 
