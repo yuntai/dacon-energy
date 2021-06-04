@@ -22,7 +22,7 @@ def prep(dataroot, nweek, num, test_size=0.3):
     nlags = 24*7*nweek
 
     lags = create_lag_features2(df.target, nlags, 0.2) # w/o scale
-    print("lags feature size=", lags.shape[1])
+    num_lag_features = lags.shape[1]
     features = df.join(lags, how="outer").dropna()
     target = features.target
     features = features.drop('target', axis=1)
@@ -48,7 +48,7 @@ def prep(dataroot, nweek, num, test_size=0.3):
     y_train.index = y_train_.index
     y_test.index = y_test_.index
 
-    return X_train, X_test, y_train, y_test, target_scaler
+    return X_train, X_test, y_train, y_test, target_scaler, num_lag_features
 
 # MAPE computation
 def mape(y, yhat, perc=True):
