@@ -38,7 +38,6 @@ X_train, X_test, y_train, y_test = train_test_split(features,
                                                     target,
                                                     test_size=0.3,
                                                     shuffle=False)
-pickle.dump((X_train, X_test, y_train, y_test), 'prep.pkl')
 
 y_train_trf = TargetTransformer(log=args.logtr, detrend=False)
 y_train = y_train_trf.transform(y_train.index, y_train.values)

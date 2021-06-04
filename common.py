@@ -14,9 +14,17 @@ def get_model_param(fn):
     num, seed, nweek = fn.split('.')[0].split('_')[1:]
     return num, seed, nweek
 
+def prep_submission(dataroot, nweek, num, test_size=0.3):
+    _, test_df = read_df(pathlib.Path(dataroot))
+    test_df = test_df[test_df.num==num].set_index('datetime').asfreq('1H', 'bfill')
+    test_df = test_df.drop(['date','num','nelec_cool_flag','solar_flag'], axis=1)
+
+    X_train, *_, target_scaler, _ = prep(dataroot, nweek, num)
+    return X_train, test_df, target_scaler
+
 # lag features, scale -> log1p tr
 def prep(dataroot, nweek, num, test_size=0.3):
-    train_df, test_df = read_df(pathlib.Path(dataroot))
+    train_df, _ = read_df(pathlib.Path(dataroot))
 
     df = train_df[train_df.num==num].set_index('datetime').asfreq('1H', 'bfill')
     df = df.drop(['date','num','nelec_cool_flag','solar_flag'], axis=1)
