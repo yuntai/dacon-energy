@@ -6,7 +6,7 @@ from common import forecast_multi_recursive
 from common import smape
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--model_fn', type=str, default='./models/model_3_42_3.json')
+parser.add_argument('--model', '-m', type=str, default='./models/model_3_42_3.json')
 parser.add_argument('--dataroot', type=str, default='./data')
 args = parser.parse_args()
 
