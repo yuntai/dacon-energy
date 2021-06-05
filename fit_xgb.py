@@ -86,6 +86,7 @@ print(f"{args.num=},{cv_score=:.4f},{score=:.4f},{fscore=:.4f}")
 y = pd.concat([y_train, y_test])
 
 res = y.to_frame()
+res['num'] = args.num
 res.columns = ['gt']
 res.loc[y_test.index, 'pred'] = preds
 res.loc[y_test.index, 'fpred'] = fpreds
