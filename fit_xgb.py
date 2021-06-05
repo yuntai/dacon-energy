@@ -12,18 +12,20 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import pickle
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--num', type=int, default=3, help='building number')
+parser.add_argument('--num', '-n', type=int, default=4, help='building number')
 parser.add_argument('--dataroot', type=str, default="./data")
 parser.add_argument('--nweek', type=int, default=2)
 parser.add_argument('--pacfth', type=float, default=0.2)
 parser.add_argument('--logtr', type=bool, default=False)
 parser.add_argument('--seed', type=int, default=42)
+parser.add_argument('--pacf_threshold', '-t', type=float, default=0.2)
 args = parser.parse_args()
 
 print(args)
 
 max_lags = args.nweek * 24 * 7
-X_train, X_test, y_train, y_test, target_scaler, lag_cols = common.prep(args.dataroot, args.num, max_lags)
+X_train, X_test, y_train, y_test, target_scaler, lag_cols = common.prep(args.dataroot, args.num, max_lags, threshold=args.pacf_threshold)
+print("lag_cols: ", lag_cols, len(lag_cols))
 
 #y_train_trf = TargetTransformer(log=args.logtr, detrend=False)
 #y_train = y_train_trf.transform(y_train.index, y_train.values)
@@ -46,11 +48,11 @@ best, trials = optimize_xgb(X_train, y_train, max_evals=50, scorer=scorer, seed=
 # evaluate the best model on the test set
 res = train_xgb(best, X_test, y_test, scorer, seed=args.seed)
 print(res)
-xgb_model = res["model"]
+model = res["model"]
 fn = common.get_model_fn(args)
 print(f"saving to {fn}")
-xgb_model.save_model(f"models/{fn}")
-preds = xgb_model.predict(X_test)
+model.save_model(f"models/{fn}")
+preds = model.predict(X_test)
 cv_score = min([f["loss"] for f in trials.results if f["status"] == STATUS_OK])
 score = smape_scale(y_test.values, preds)
 
@@ -64,7 +66,7 @@ for lag in feature_lags:
     idx = X_test.iloc[lag:].index
     X_test.loc[idx, f"lag_{lag}"] = np.nan
 
-__pred = lambda ix: xgb_model.predict(X_test.iloc[ix].values[None,:])[0]
+__pred = lambda ix: model.predict(X_test.iloc[ix].values[None,:])[0]
 pred = __pred(0)
 fpreds = [pred]
 __loc = lambda c: X_test.columns.get_loc(c)
@@ -81,9 +83,11 @@ fpreds = np.array(fpreds)
 fscore = smape(target_scaler.inverse_transform(fpreds), target_scaler.inverse_transform(y_test.values.squeeze()))
 print(f"{args.num=},{cv_score=:.4f},{score=:.4f},{fscore=:.4f}")
 
-res = y_test.to_frame()
+y = pd.concat([y_train, y_test])
+
+res = y.to_frame()
 res.columns = ['gt']
-res['pred'] = preds
-res['fpred'] = fpreds
+res.loc[y_test.index, 'pred'] = preds
+res.loc[y_test.index, 'fpred'] = fpreds
 res[res.columns] = target_scaler.inverse_transform(res)
 res.to_csv(f'vals/{args.num:02d}.csv', index=False)

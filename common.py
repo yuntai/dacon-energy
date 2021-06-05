@@ -25,11 +25,17 @@ def prep_common(train_df, test_df, max_lags, threshold=0.2):
     lags = get_lags(train_df.target, max_lags, threshold)
     lag_df = create_lag_features(combined_df.target, lags)
     lag_cols = list(lag_df.columns)
-    ix = test_df.index[0]
+
     combined_df = combined_df.join(lag_df, how='outer')
+
+    dummies = ['hour','weekday','day','month','weekend']
+    for col in dummies:
+        dummy_df = pd.get_dummies(combined_df[col], prefix=col)
+        combined_df = combined_df.merge(dummy_df, left_index=True, right_index=True).drop(col, axis=1)
 
     train_df = combined_df.loc[:train_df.iloc[-1].name].dropna().copy()
     test_df = combined_df.loc[test_df.iloc[0].name:].copy()
+
 
     target_scaler = StandardScaler()
     target_scaler.fit(train_df.target.values[:,None])
@@ -71,7 +77,7 @@ def prep(dataroot, num, max_lags, test_size=0.3, threshold=0.2):
     test_df = train_df.loc[ix + pd.Timedelta('1H'):]
     train_df = train_df.loc[:ix]
 
-    train_df, test_df, target_scaler, lag_cols = prep_common(train_df, test_df, max_lags)
+    train_df, test_df, target_scaler, lag_cols = prep_common(train_df, test_df, max_lags, threshold=threshold)
 
     y_train, X_train = train_df.target, train_df.drop('target', axis=1)
     y_test, X_test = test_df.target, test_df.drop('target', axis=1)
