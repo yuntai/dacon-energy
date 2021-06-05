@@ -78,12 +78,12 @@ for row_ix in range(1, X_test.shape[0]):
     fpreds.append(pred)
 
 fpreds = np.array(fpreds)
-fscore = smape(target_scaler.inverse_transform(preds), target_scaler.inverse_transform(y_test.values.squeeze()))
-print(f"{num=},{nweek=},{seed=},{cv_score=:.4f},{score=:.4f},{fscore=:.4f}")
+fscore = smape(target_scaler.inverse_transform(fpreds), target_scaler.inverse_transform(y_test.values.squeeze()))
+print(f"{args.num=},{cv_score=:.4f},{score=:.4f},{fscore=:.4f}")
 
 res = y_test.to_frame()
 res.columns = ['gt']
 res['pred'] = preds
 res['fpred'] = fpreds
 res[res.columns] = target_scaler.inverse_transform(res)
-res.to_csv(f'vals/{num:02d}.csv', index=False)
+res.to_csv(f'vals/{args.num:02d}.csv', index=False)
