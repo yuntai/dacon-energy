@@ -7,7 +7,7 @@ import pathlib
 import os
 
 def get_model_fn(args):
-    return f"model_{args.num}_{args.seed}_{args.nweek}.json"
+    return f"model_{args.num:02d}_{args.seed}_{args.nweek}.json"
 
 def get_model_param(fn):
     fn = os.path.basename(fn)
@@ -19,67 +19,64 @@ def filter_df(df, num):
     df = df.drop(['date','num','nelec_cool_flag','solar_flag'], axis=1)
     return df
 
-def prep_submission(dataroot, num, max_lags, threshold):
+def prep_common(train_df, test_df, max_lags, threshold=0.2):
+    combined_df = pd.concat([train_df, test_df])
+
+    lags = get_lags(train_df.target, max_lags, threshold)
+    lag_df = create_lag_features(combined_df.target, lags)
+    lag_cols = list(lag_df.columns)
+    ix = test_df.index[0]
+    combined_df = combined_df.join(lag_df, how='outer')
+
+    train_df = combined_df.loc[:train_df.iloc[-1].name].dropna().copy()
+    test_df = combined_df.loc[test_df.iloc[0].name:].copy()
+
+    target_scaler = StandardScaler()
+    target_scaler.fit(train_df.target.values[:,None])
+
+    cols = lag_cols + ['target']
+    train_df.loc[:, cols] = train_df[cols].apply(lambda x: target_scaler.transform(x.values[:,None]).squeeze())
+    test_df.loc[:, cols] = test_df[cols].apply(lambda x: target_scaler.transform(x.values[:,None]).squeeze())
+
+    return train_df, test_df, target_scaler, lag_cols
+
+def prep_submission(dataroot, num, max_lags, threshold=0.2):
     # combine train_df, test_df
     # interpolate test_df
     # should have remembered lag_feats
-
     train_df, test_df = read_df(dataroot)
     test_df = test_df.interpolate()
     train_df = filter_df(train_df, num)
     test_df = filter_df(test_df, num)
 
-    combined_df = pd.concat([train_df, test_df])
+    _, test_df, target_scaler, lag_cols = prep_common(train_df, test_df, max_lags, threshold)
 
-    lags = get_lags(train_df.target, max_lags, threshold)
-    lag_df = create_lag_features(combined_df.target, lags)
-    lag_cols = lag_df.columns
-    ix = test_df.index[0]
-    test_df = test_df.join(lag_df, how="outer").loc[ix:]
+    X_test = test_df.drop('target', axis=1)
 
-    target_scaler = StandardScaler()
-    target_scaler.fit(train_df.target.values[:,None])
-
-    test_df.loc[:, lag_cols] = test_df[lag_cols].apply(lambda x: target_scaler.transform(x.values[:,None]).squeeze())
-
-    return test_df, target_scaler, lag_cols
+    return X_test, target_scaler, lag_cols
 
 # lag features, scale -> log1p tr
-def prep(dataroot, nweek, num, test_size=0.3):
-    train_df, _ = read_df(pathlib.Path(dataroot))
+def prep(dataroot, num, max_lags, test_size=0.3, threshold=0.2):
+    train_df, _ = read_df(dataroot)
+    train_df = filter_df(train_df, num)
 
-    df = train_df[train_df.num==num].set_index('datetime').asfreq('1H', 'bfill')
-    df = df.drop(['date','num','nelec_cool_flag','solar_flag'], axis=1)
+    if test_size == '2W':
+        ix = 24*7*2
+        ix = train_df.iloc[-ix].name
+    else: 
+        assert type(test_size) == float
+        ix = int(train_df.shape[0] * 0.3)
+        ix = train_df.iloc[-ix].name
 
-    nlags = 24*7*nweek
+    test_df = train_df.loc[ix + pd.Timedelta('1H'):]
+    train_df = train_df.loc[:ix]
 
-    lags = create_lag_features2(df.target, nlags, 0.2) # w/o scale
-    features = df.join(lags, how="outer").dropna()
-    target = features.target
-    features = features.drop('target', axis=1)
+    train_df, test_df, target_scaler, lag_cols = prep_common(train_df, test_df, max_lags)
 
-    X_train_, X_test_, y_train_, y_test_ = train_test_split(features,
-                                                        target,
-                                                        test_size=test_size,
-                                                        shuffle=False)
+    y_train, X_train = train_df.target, train_df.drop('target', axis=1)
+    y_test, X_test = test_df.target, test_df.drop('target', axis=1)
 
-    lag_cols = lags.columns
-
-    target_scaler = StandardScaler()
-    target_scaler.fit(y_train_.values[:,None])
-
-    X_train = X_train_.copy()
-    X_test = X_test_.copy()
-    X_train.loc[:, lag_cols] = X_train_[lag_cols].apply(lambda x: target_scaler.transform(x.values[:,None]).squeeze())
-    X_test.loc[:, lag_cols] = X_test_[lag_cols].apply(lambda x: target_scaler.transform(x.values[:,None]).squeeze())
-
-    y_train = pd.Series(target_scaler.transform(y_train_.values[:,None]).squeeze())
-    y_test = pd.Series(target_scaler.transform(y_test_.values[:,None]).squeeze())
-
-    y_train.index = y_train_.index
-    y_test.index = y_test_.index
-
-    return X_train, X_test, y_train, y_test, target_scaler, lags.columns
+    return X_train, X_test, y_train, y_test, target_scaler, lag_cols
 
 # MAPE computation
 def mape(y, yhat, perc=True):
