@@ -14,13 +14,35 @@ def get_model_param(fn):
     num, seed, nweek = fn.split('.')[0].split('_')[1:]
     return num, seed, nweek
 
-def prep_submission(dataroot, nweek, num, test_size=0.3):
-    _, test_df = read_df(pathlib.Path(dataroot))
-    test_df = test_df[test_df.num==num].set_index('datetime').asfreq('1H', 'bfill')
-    test_df = test_df.drop(['date','num','nelec_cool_flag','solar_flag'], axis=1)
+def filter_df(df, num):
+    df = df[df.num==num].set_index('datetime').asfreq('1H', 'bfill')
+    df = df.drop(['date','num','nelec_cool_flag','solar_flag'], axis=1)
+    return df
 
-    X_train, *_, target_scaler, _ = prep(dataroot, nweek, num)
-    return X_train, test_df, target_scaler
+def prep_submission(dataroot, num, max_lags, threshold):
+    # combine train_df, test_df
+    # interpolate test_df
+    # should have remembered lag_feats
+
+    train_df, test_df = read_df(dataroot)
+    test_df = test_df.interpolate()
+    train_df = filter_df(train_df, num)
+    test_df = filter_df(test_df, num)
+
+    combined_df = pd.concat([train_df, test_df])
+
+    lags = get_lags(train_df.target, max_lags, threshold)
+    lag_df = create_lag_features(combined_df.target, lags)
+    lag_cols = lag_df.columns
+    ix = test_df.index[0]
+    test_df = test_df.join(lag_df, how="outer").loc[ix:]
+
+    target_scaler = StandardScaler()
+    target_scaler.fit(train_df.target.values[:,None])
+
+    test_df.loc[:, lag_cols] = test_df[lag_cols].apply(lambda x: target_scaler.transform(x.values[:,None]).squeeze())
+
+    return test_df, target_scaler, lag_cols
 
 # lag features, scale -> log1p tr
 def prep(dataroot, nweek, num, test_size=0.3):
@@ -32,7 +54,6 @@ def prep(dataroot, nweek, num, test_size=0.3):
     nlags = 24*7*nweek
 
     lags = create_lag_features2(df.target, nlags, 0.2) # w/o scale
-    num_lag_features = lags.shape[1]
     features = df.join(lags, how="outer").dropna()
     target = features.target
     features = features.drop('target', axis=1)
@@ -58,7 +79,7 @@ def prep(dataroot, nweek, num, test_size=0.3):
     y_train.index = y_train_.index
     y_test.index = y_test_.index
 
-    return X_train, X_test, y_train, y_test, target_scaler, num_lag_features
+    return X_train, X_test, y_train, y_test, target_scaler, lags.columns
 
 # MAPE computation
 def mape(y, yhat, perc=True):
@@ -75,26 +96,22 @@ def mape(y, yhat, perc=True):
 def smape(A, F):
     return 100/len(A) * np.sum(2 * np.abs(F - A) / (np.abs(A) + np.abs(F)))
 
-def create_lag_features2(y, nlags, threshold):
-
-    features = pd.DataFrame()
-
-    partial = pd.Series(data=pacf(y, nlags=nlags))
+def get_lags(y, max_lags, threshold):
+    partial = pd.Series(data=pacf(y, nlags=max_lags))
     lags = list(partial[np.abs(partial) >= threshold].index)
-
-    df = pd.DataFrame()
-
     # avoid to insert the time series itself
     lags.remove(0)
+    assert 1 in lags
+    return lags
 
+def create_lag_features(y, lags):
+    df = pd.DataFrame()
     for l in lags:
         df[f"lag_{l}"] = y.shift(l)
-
     df.index = y.index
-
     return df
 
-def create_lag_features(y, nlags, threshold):
+def create_lag_features_with_scale(y, nlags, threshold):
 
     scaler = StandardScaler()
     features = pd.DataFrame()
@@ -122,8 +139,8 @@ test_columns = ['num','datetime','temperature','windspeed','humidity','precipita
 
 
 def read_df(dataroot):
-    train_df = pd.read_csv(dataroot/'train.csv', skiprows=[0], names=train_columns)
-    
+    dataroot = pathlib.Path(dataroot) if type(dataroot) == str else dataroot
+
     def date_prep(df):
         df['datetime'] = pd.to_datetime(df['datetime'])
         df['hour'] = df['datetime'].dt.hour
@@ -133,6 +150,7 @@ def read_df(dataroot):
         df['month'] = df['datetime'].dt.month
         df['weekend'] = df['weekday'].isin([5,6]).astype(int)
 
+    train_df = pd.read_csv(dataroot/'train.csv', skiprows=[0], names=train_columns)
     test_df = pd.read_csv(dataroot/'test.csv', skiprows=[0], names=test_columns)
 
     date_prep(train_df)
