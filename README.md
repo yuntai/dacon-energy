@@ -11,3 +11,4 @@
 - review KAGGLE solutions
 - outlier removal
 - train with full data
+- feature selection

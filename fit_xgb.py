@@ -87,8 +87,9 @@ y = pd.concat([y_train, y_test])
 
 res = y.to_frame()
 res.columns = ['gt']
-res['num'] = args.num
 res.loc[y_test.index, 'pred'] = preds
 res.loc[y_test.index, 'fpred'] = fpreds
 res[res.columns] = target_scaler.inverse_transform(res)
-res.to_csv(f'vals/{args.num:02d}.csv', index=False)
+res['num'] = args.num
+res = res[['num', 'gt', 'pred', 'fpred']]
+res.to_csv(f'vals/{args.num:02d}.csv', index=False, header=False)
