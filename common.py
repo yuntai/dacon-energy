@@ -19,10 +19,9 @@ def filter_df(df, num):
     df = df.drop(['date','num','nelec_cool_flag','solar_flag'], axis=1)
     return df
 
-def prep_common(train_df, test_df, max_lags, threshold=0.2):
+def prep_common(train_df, test_df, lags, threshold=0.2):
     combined_df = pd.concat([train_df, test_df])
 
-    lags = get_lags(train_df.target, max_lags, threshold)
     lag_df = create_lag_features(combined_df.target, lags)
     lag_cols = list(lag_df.columns)
 
@@ -36,7 +35,6 @@ def prep_common(train_df, test_df, max_lags, threshold=0.2):
     train_df = combined_df.loc[:train_df.iloc[-1].name].dropna().copy()
     test_df = combined_df.loc[test_df.iloc[0].name:].copy()
 
-
     target_scaler = StandardScaler()
     target_scaler.fit(train_df.target.values[:,None])
 
@@ -44,9 +42,9 @@ def prep_common(train_df, test_df, max_lags, threshold=0.2):
     train_df.loc[:, cols] = train_df[cols].apply(lambda x: target_scaler.transform(x.values[:,None]).squeeze())
     test_df.loc[:, cols] = test_df[cols].apply(lambda x: target_scaler.transform(x.values[:,None]).squeeze())
 
-    return train_df, test_df, target_scaler, lag_cols
+    return train_df, test_df, target_scaler
 
-def prep_submission(dataroot, num, max_lags, threshold=0.2):
+def prep_submission(dataroot, num, lags, threshold=0.2):
     # combine train_df, test_df
     # interpolate test_df
     # should have remembered lag_feats
@@ -55,11 +53,11 @@ def prep_submission(dataroot, num, max_lags, threshold=0.2):
     train_df = filter_df(train_df, num)
     test_df = filter_df(test_df, num)
 
-    _, test_df, target_scaler, lag_cols = prep_common(train_df, test_df, max_lags, threshold)
+    _, test_df, target_scaler = prep_common(train_df, test_df, lags, threshold)
 
     X_test = test_df.drop('target', axis=1)
 
-    return X_test, target_scaler, lag_cols
+    return X_test, target_scaler
 
 # lag features, scale -> log1p tr
 def prep(dataroot, num, max_lags, test_size=0.3, threshold=0.2):
@@ -69,7 +67,7 @@ def prep(dataroot, num, max_lags, test_size=0.3, threshold=0.2):
     if test_size == '2W':
         ix = 24*7*2
         ix = train_df.iloc[-ix].name
-    else: 
+    else:
         assert type(test_size) == float
         ix = int(train_df.shape[0] * 0.3)
         ix = train_df.iloc[-ix].name
@@ -77,12 +75,14 @@ def prep(dataroot, num, max_lags, test_size=0.3, threshold=0.2):
     test_df = train_df.loc[ix + pd.Timedelta('1H'):]
     train_df = train_df.loc[:ix]
 
-    train_df, test_df, target_scaler, lag_cols = prep_common(train_df, test_df, max_lags, threshold=threshold)
+    lags = get_lags(train_df.target, max_lags, threshold)
+
+    train_df, test_df, target_scaler, lag_cols = prep_common(train_df, test_df, lags, threshold=threshold)
 
     y_train, X_train = train_df.target, train_df.drop('target', axis=1)
     y_test, X_test = test_df.target, test_df.drop('target', axis=1)
 
-    return X_train, X_test, y_train, y_test, target_scaler, lag_cols
+    return X_train, X_test, y_train, y_test, target_scaler, lags
 
 # MAPE computation
 def mape(y, yhat, perc=True):

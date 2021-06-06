@@ -23,15 +23,13 @@ args = parser.parse_args()
 
 print(args)
 
+def __get_lag_cols(lags):
+    return [f'lag_{l:02d}' for l in lags]
+
 max_lags = args.nweek * 24 * 7
-X_train, X_test, y_train, y_test, target_scaler, lag_cols = common.prep(args.dataroot, args.num, max_lags, threshold=args.pacf_threshold)
+X_train, X_test, y_train, y_test, target_scaler, lags = common.prep(args.dataroot, args.num, max_lags, threshold=args.pacf_threshold)
+lag_cols = __get_lag_cols(lags)
 print("lag_cols: ", lag_cols, len(lag_cols))
-
-#y_train_trf = TargetTransformer(log=args.logtr, detrend=False)
-#y_train = y_train_trf.transform(y_train.index, y_train.values)
-
-#y_test_trf = TargetTransformer(log=args.logtr, detrend=False)
-#y_test = y_test_trf.transform(y_test.index, y_test.values)
 
 def smape_scale(A, F):
     return smape(target_scaler.inverse_transform(A), target_scaler.inverse_transform(F))
