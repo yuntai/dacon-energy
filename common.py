@@ -27,7 +27,7 @@ def filter_df(df, num):
 def prep_common(train_df, test_df, lags, target_scaler, threshold=0.2):
     combined_df = pd.concat([train_df, test_df])
 
-    lag_df = create_lag_features(combined_df.target, lags)
+    lag_df = create_lag_features(combined_df, combined_df.target, lags)
     lag_cols = list(lag_df.columns)
 
     combined_df = combined_df.join(lag_df, how='outer')
@@ -89,6 +89,7 @@ def prep(dataroot, num, max_lags, test_size=0.3, threshold=0.2):
 
     assert sz == test_df.shape[0] + train_df.shape[0]
 
+    #lags = [1, 2, 6, 12, 24, 7*24]
     lags = get_lags(train_df.target, max_lags, threshold)
 
     train_df, test_df, target_scaler = prep_common(train_df, test_df, lags, target_scaler, threshold=threshold)
@@ -111,7 +112,7 @@ def mape(y, yhat, perc=True):
 
 # SMAPE computation
 def smape(A, F):
-    return 100/len(A) * np.sum(2 * np.abs(F - A) / (np.abs(A) + np.abs(F)))
+    return 100/len(A) * np.sum(2 * np.abs(F - A) / (np.abs(A) + np.abs(F) + 1e-9))
 
 def get_lags(y, max_lags, threshold):
     partial = pd.Series(data=pacf(y, nlags=max_lags))
@@ -121,10 +122,13 @@ def get_lags(y, max_lags, threshold):
     assert 1 in lags
     return lags
 
-def create_lag_features(y, lags):
+def create_lag_features(train_df, y, lags, cols=[]):
     df = pd.DataFrame()
     for l in lags:
         df[f"lag_{l:02d}"] = y.shift(l)
+        for c in cols:
+            df[f"{c}_lag_{l:02d}"] = train_df[c].shift(l)
+
     df.index = y.index
     return df
 
