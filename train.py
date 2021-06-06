@@ -9,7 +9,7 @@ from sklearn.model_selection import (TimeSeriesSplit, train_test_split, cross_va
 
 #mape_scorer = make_scorer(mape, greater_is_better=False)
 # run XGBoost algorithm with hyperparameters optimization
-def train_xgb(params, X_train, y_train, scorer, seed):
+def train_xgb(params, X_train, y_train, scorer=None, seed=42):
     """
     Train XGBoost regressor using the parameters given as input. The model
     is validated using standard cross validation technique adapted for time series

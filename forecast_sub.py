@@ -6,11 +6,13 @@ import pandas as pd
 from common import smape, prep_submission
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--model', '-m', type=str, default='./models/model_2_42_3.json')
+parser.add_argument('--model', '-m', type=str, default='./models/model_02_42_2.json')
 parser.add_argument('--dataroot', type=str, default='./data')
 args = parser.parse_args()
 
 num, seed, nweek = map(int, common.get_model_param(args.model))
+print(f"{num=}, {seed=}, {nweek=}")
+
 max_lags = 24*7*nweek
 threshold = 0.2
 

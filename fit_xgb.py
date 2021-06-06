@@ -8,7 +8,6 @@ from common import read_df, create_lag_features, smape, TargetTransformer
 from train import optimize_xgb, train_xgb
 from hyperopt import STATUS_OK
 from sklearn.metrics import make_scorer
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import pickle
 
 parser = argparse.ArgumentParser()
@@ -19,20 +18,24 @@ parser.add_argument('--pacfth', type=float, default=0.2)
 parser.add_argument('--logtr', type=bool, default=False)
 parser.add_argument('--seed', type=int, default=42)
 parser.add_argument('--pacf_threshold', '-t', type=float, default=0.2)
+parser.add_argument('--test_size', type=str, default='2W')
 args = parser.parse_args()
 
 print(args)
 
-def __get_lag_cols(lags):
-    return [f'lag_{l:02d}' for l in lags]
+def __get_lag_col(lags):
+    return f'lag_{lags:02d}'
 
 max_lags = args.nweek * 24 * 7
-X_train, X_test, y_train, y_test, target_scaler, lags = common.prep(args.dataroot, args.num, max_lags, threshold=args.pacf_threshold)
-lag_cols = __get_lag_cols(lags)
-print("lag_cols: ", lag_cols, len(lag_cols))
+print(f"{max_lags=}")
+
+X_train, X_test, y_train, y_test, target_scaler, feature_lags = common.prep(args.dataroot, args.num, max_lags, test_size='2W', threshold=args.pacf_threshold)
+print("lags: ", feature_lags, len(feature_lags))
 
 def smape_scale(A, F):
-    return smape(target_scaler.inverse_transform(A), target_scaler.inverse_transform(F))
+    #return smape(target_scaler.inverse_transform(np.expm1(A[:,None])), target_scaler.inverse_transform(np.expm1(F[:,None])))
+    #return smape(np.expm1(target_scaler.inverse_transform(A[:,None])), np.expm1(target_scaler.inverse_transform(F[:,None])))
+    return smape(np.expm1(A[:,None]), np.expm1(F[:,None]))
 
 if args.logtr:
     assert 0
@@ -54,31 +57,25 @@ preds = model.predict(X_test)
 cv_score = min([f["loss"] for f in trials.results if f["status"] == STATUS_OK])
 score = smape_scale(y_test.values, preds)
 
-#print(f"num({args.num}) RMSE CV/test: {cv_score:.4f}/{score:.4f}")
-
 # forecast
-feature_lags = [int(f.split("_")[1]) for f in X_train.columns if "lag" in f]
-assert 1 in feature_lags
-
 for lag in feature_lags:
     idx = X_test.iloc[lag:].index
-    X_test.loc[idx, f"lag_{lag}"] = np.nan
+    X_test.loc[idx, __get_lag_col(lag)] = np.nan
 
-__pred = lambda ix: model.predict(X_test.iloc[ix].values[None,:])[0]
-pred = __pred(0)
-fpreds = [pred]
 __loc = lambda c: X_test.columns.get_loc(c)
+__pred = lambda ix: model.predict(X_test.iloc[ix].values[None,:]).squeeze().item()
+fpreds = [__pred(0)]
+
 for row_ix in range(1, X_test.shape[0]):
-    X_test.iloc[row_ix, __loc('lag_1')] = pred
+    X_test.iloc[row_ix, __loc('lag_01')] = fpreds[-1]
 
-    for col, lag in zip(lag_cols[1:], feature_lags[1:]):
+    for lag in feature_lags[1:]:
+        col = __get_lag_col(lag)
         if np.isnan(X_test.iloc[row_ix][col]):
-            X_test.iloc[row_ix, __loc(col)] = X_test.iloc[row_ix-lag+1]['lag_1']
-    pred = __pred(row_ix)
-    fpreds.append(pred)
+            X_test.iloc[row_ix, __loc(col)] = X_test.iloc[row_ix-lag+1]['lag_01']
+    fpreds.append(__pred(row_ix))
 
-fpreds = np.array(fpreds)
-fscore = smape(target_scaler.inverse_transform(fpreds), target_scaler.inverse_transform(y_test.values.squeeze()))
+fscore = smape_scale(y_test.values, np.array(fpreds))
 print(f"{args.num=},{cv_score=:.4f},{score=:.4f},{fscore=:.4f}")
 
 y = pd.concat([y_train, y_test])
@@ -87,7 +84,7 @@ res = y.to_frame()
 res.columns = ['gt']
 res.loc[y_test.index, 'pred'] = preds
 res.loc[y_test.index, 'fpred'] = fpreds
-res[res.columns] = target_scaler.inverse_transform(res)
+res[res.columns] = np.expm1(res)
 res['num'] = args.num
 res = res[['num', 'gt', 'pred', 'fpred']]
 res.to_csv(f'vals/{args.num:02d}.csv', index=False, header=False)

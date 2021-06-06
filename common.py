@@ -1,10 +1,15 @@
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from statsmodels.tsa.stattools import pacf
 from sklearn.model_selection import train_test_split
 import pathlib
 import os
+
+def get_scaler(y):
+    m = MinMaxScaler()
+    m.fit(y)
+    return m
 
 def get_model_fn(args):
     return f"model_{args.num:02d}_{args.seed}_{args.nweek}.json"
@@ -16,10 +21,10 @@ def get_model_param(fn):
 
 def filter_df(df, num):
     df = df[df.num==num].set_index('datetime').asfreq('1H', 'bfill')
-    df = df.drop(['date','num','nelec_cool_flag','solar_flag'], axis=1)
+    df = df.drop(['date','num','day','month','nelec_cool_flag','solar_flag'], axis=1)
     return df
 
-def prep_common(train_df, test_df, lags, threshold=0.2):
+def prep_common(train_df, test_df, lags, target_scaler, threshold=0.2):
     combined_df = pd.concat([train_df, test_df])
 
     lag_df = create_lag_features(combined_df.target, lags)
@@ -27,7 +32,7 @@ def prep_common(train_df, test_df, lags, threshold=0.2):
 
     combined_df = combined_df.join(lag_df, how='outer')
 
-    dummies = ['hour','weekday','day','month','weekend']
+    dummies = ['hour','weekday','weekend']
     for col in dummies:
         dummy_df = pd.get_dummies(combined_df[col], prefix=col)
         combined_df = combined_df.merge(dummy_df, left_index=True, right_index=True).drop(col, axis=1)
@@ -35,12 +40,13 @@ def prep_common(train_df, test_df, lags, threshold=0.2):
     train_df = combined_df.loc[:train_df.iloc[-1].name].dropna().copy()
     test_df = combined_df.loc[test_df.iloc[0].name:].copy()
 
-    target_scaler = StandardScaler()
-    target_scaler.fit(train_df.target.values[:,None])
-
     cols = lag_cols + ['target']
-    train_df.loc[:, cols] = train_df[cols].apply(lambda x: target_scaler.transform(x.values[:,None]).squeeze())
-    test_df.loc[:, cols] = test_df[cols].apply(lambda x: target_scaler.transform(x.values[:,None]).squeeze())
+    #train_df.loc[:, cols] = train_df[cols].apply(lambda x: target_scaler.transform(np.log1p(x.values[:,None])).squeeze())
+    #test_df.loc[:, cols] = test_df[cols].apply(lambda x: target_scaler.transform(np.log1p(x.values[:,None])).squeeze())
+    train_df.loc[:, cols] = train_df[cols].apply(lambda x: np.log1p(x.values))
+    test_df.loc[:, cols] = test_df[cols].apply(lambda x: np.log1p(x.values))
+
+    assert train_df.isna().sum().sum()==0
 
     return train_df, test_df, target_scaler
 
@@ -53,7 +59,9 @@ def prep_submission(dataroot, num, lags, threshold=0.2):
     train_df = filter_df(train_df, num)
     test_df = filter_df(test_df, num)
 
-    _, test_df, target_scaler = prep_common(train_df, test_df, lags, threshold)
+    target_scaler = get_scaler(train_df.target.values[:, None])
+
+    _, test_df, target_scaler = prep_common(train_df, test_df, lags, target_scaler, threshold)
 
     X_test = test_df.drop('target', axis=1)
 
@@ -63,6 +71,10 @@ def prep_submission(dataroot, num, lags, threshold=0.2):
 def prep(dataroot, num, max_lags, test_size=0.3, threshold=0.2):
     train_df, _ = read_df(dataroot)
     train_df = filter_df(train_df, num)
+
+    target_scaler = get_scaler(np.log1p(train_df.target.values[:,None]))
+
+    sz = train_df.shape[0]
 
     if test_size == '2W':
         ix = 24*7*2
@@ -75,9 +87,11 @@ def prep(dataroot, num, max_lags, test_size=0.3, threshold=0.2):
     test_df = train_df.loc[ix + pd.Timedelta('1H'):]
     train_df = train_df.loc[:ix]
 
+    assert sz == test_df.shape[0] + train_df.shape[0]
+
     lags = get_lags(train_df.target, max_lags, threshold)
 
-    train_df, test_df, target_scaler, lag_cols = prep_common(train_df, test_df, lags, threshold=threshold)
+    train_df, test_df, target_scaler = prep_common(train_df, test_df, lags, target_scaler, threshold=threshold)
 
     y_train, X_train = train_df.target, train_df.drop('target', axis=1)
     y_test, X_test = test_df.target, test_df.drop('target', axis=1)
@@ -110,7 +124,7 @@ def get_lags(y, max_lags, threshold):
 def create_lag_features(y, lags):
     df = pd.DataFrame()
     for l in lags:
-        df[f"lag_{l}"] = y.shift(l)
+        df[f"lag_{l:02d}"] = y.shift(l)
     df.index = y.index
     return df
 
