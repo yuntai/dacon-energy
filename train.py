@@ -5,11 +5,11 @@ import hyperopt
 from hyperopt import fmin, tpe, hp, Trials, STATUS_OK, STATUS_FAIL
 from functools import partial
 from sklearn.metrics import mean_squared_error
-from sklearn.model_selection import (TimeSeriesSplit, train_test_split, cross_val_score)
+from sklearn.model_selection import TimeSeriesSplit, train_test_split, cross_val_score, KFold, cross_validate
 
 #mape_scorer = make_scorer(mape, greater_is_better=False)
 # run XGBoost algorithm with hyperparameters optimization
-def train_xgb(params, X_train, y_train, scorer=None, seed=42):
+def train_xgb(params, X_train, y_train, cv, scorer='neg_mean_squared_error', seed=42):
     """
     Train XGBoost regressor using the parameters given as input. The model
     is validated using standard cross validation technique adapted for time series
@@ -25,8 +25,10 @@ def train_xgb(params, X_train, y_train, scorer=None, seed=42):
 
     Returns
     -------
-    dict with keys 'model' for the trained model, 'status' containing the hyperopt
-    status string and 'loss' with the RMSE obtained from cross-validation
+    dict with keys 'model' for the trained model, 
+    'status' containing the hyperopt,
+    status string,
+    and 'loss' with the RMSE obtained from cross-validation
     """
 
     n_estimators = int(params["n_estimators"])
@@ -38,24 +40,28 @@ def train_xgb(params, X_train, y_train, scorer=None, seed=42):
                                  learning_rate=params["learning_rate"],
                                  subsample=params["subsample"], seed=seed)
 
-        result = model.fit(X_train,
-                           y_train.values.ravel(),
-                           eval_set=[(X_train, y_train.values.ravel())],
-                           early_stopping_rounds=50,
-                           verbose=False)
+        #result = model.fit(X_train,
+        #                   y_train.values.ravel(),
+        #                   eval_set=[(X_train, y_train.values.ravel())],
+        #                   early_stopping_rounds=50,
+        #                   verbose=False)
 
         # cross validate using the right iterator for time series
-        cv_space = TimeSeriesSplit(n_splits=5)
-        cv_score = cross_val_score(model,
-                                   X_train, y_train.values.ravel(),
-                                   cv=cv_space,
-                                   scoring=scorer)
+        #cv_space = KFold(n_splits=n_splits)
 
-        rmse = np.abs(np.mean(np.array(cv_score)))
+        cv_score = cross_validate(
+            model,
+            X_train, y_train.values.ravel(),
+            cv=cv,
+            scoring=scorer,
+            return_estimator=True
+        )
+
+        avg_score = np.abs(np.mean(np.array(cv_score['test_score'])))
         return {
-            "loss": rmse,
+            "loss": avg_score,
             "status": STATUS_OK,
-            "model": model
+            "models": cv_score['estimator']
         }
 
     except ValueError as ex:
@@ -64,7 +70,7 @@ def train_xgb(params, X_train, y_train, scorer=None, seed=42):
             "status": STATUS_FAIL
         }
 
-def optimize_xgb(X_train, y_train, max_evals=10, scorer=None, seed=42):
+def optimize_xgb(X_train, y_train, n_splits=5, max_evals=10, cv=None, scorer='neg_mean_squared_error', seed=42):
     """
     Run Bayesan optimization to find the optimal XGBoost algorithm
     hyperparameters.
@@ -80,6 +86,7 @@ def optimize_xgb(X_train, y_train, max_evals=10, scorer=None, seed=42):
     best: dict with the best parameters obtained
     trials: a list of hyperopt Trials objects with the history of the optimization
     """
+    assert cv is not None
 
     space = {
         "n_estimators": hp.quniform("n_estimators", 100, 1000, 10),
@@ -90,8 +97,10 @@ def optimize_xgb(X_train, y_train, max_evals=10, scorer=None, seed=42):
     }
 
     objective_fn = partial(train_xgb,
-                           X_train=X_train,
-                           y_train=y_train, scorer=scorer, seed=seed)
+                           X_train=X_train, y_train=y_train, 
+                           scorer=scorer, 
+                           cv=cv,
+                           seed=seed)
 
     trials = Trials()
     best = fmin(fn=objective_fn,
@@ -101,12 +110,4 @@ def optimize_xgb(X_train, y_train, max_evals=10, scorer=None, seed=42):
                 trials=trials)
 
     # evaluate the best model on the test set
-    print(f"""
-    Best parameters:
-        learning_rate: {best["learning_rate"]}
-        n_estimators: {best["n_estimators"]}
-        max_depth: {best["max_depth"]}
-        sub_sample: {best["subsample"]}
-        gamma: {best["gamma"]}
-    """)
     return best, trials
