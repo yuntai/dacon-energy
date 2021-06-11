@@ -6,6 +6,10 @@ from sklearn.model_selection import train_test_split
 import pathlib
 import os
 import json
+from datetime import datetime
+
+def now():
+    return datetime.now().strftime("%Y%m%d%H%M%S")
 
 def ensemble(models, X_test):
     preds = []
@@ -32,7 +36,7 @@ def get_model_param(fn):
 
 def filter_df(df, num):
     df = df[df.num==num].set_index('datetime').asfreq('1H', 'bfill')
-    df = df.drop(['date','num','day','month','nelec_cool_flag','solar_flag'], axis=1)
+    df.drop(['date', 'num', 'day', 'month', 'nelec_cool_flag', 'solar_flag'], axis=1, inplace=True)
     return df
 
 def prep_common(train_df, test_df, lags, target_scaler):
@@ -45,10 +49,10 @@ def prep_common(train_df, test_df, lags, target_scaler):
 
         combined_df = combined_df.join(lag_df, how='outer')
 
-    dummies = ['hour','weekday','weekend']
-    for col in dummies:
-        dummy_df = pd.get_dummies(combined_df[col], prefix=col)
-        combined_df = combined_df.merge(dummy_df, left_index=True, right_index=True).drop(col, axis=1)
+    #dummies = ['hour','weekday','weekend']
+    #for col in dummies:
+    #    dummy_df = pd.get_dummies(combined_df[col], prefix=col)
+    #    combined_df = combined_df.merge(dummy_df, left_index=True, right_index=True).drop(col, axis=1)
 
     train_df = combined_df.loc[:train_df.iloc[-1].name].dropna().copy()
     test_df = combined_df.loc[test_df.iloc[0].name:].copy()
@@ -64,11 +68,7 @@ def prep_common(train_df, test_df, lags, target_scaler):
     return train_df, test_df
 
 def prep_submission(dataroot, num, lags):
-    # combine train_df, test_df
-    # interpolate test_df
-    # should have remembered lag_feats
     train_df, test_df = read_df(dataroot)
-    test_df = test_df.interpolate()
     train_df = filter_df(train_df, num)
     test_df = filter_df(test_df, num)
 
@@ -87,6 +87,8 @@ def prep_full(dataroot, num):
     train_df = filter_df(train_df, num)
     test_df = filter_df(test_df, num)
 
+    test_df = test_df.interpolate()
+
     sz = train_df.shape[0]
 
     combined_df = pd.concat([train_df, test_df])
@@ -101,12 +103,10 @@ def prep_full(dataroot, num):
 
     #train_df['target'] = np.log1p(train_df['target'])
 
-    y_train = train_df.target
-    X_train = train_df.drop('target', axis=1)
+    y_train = train_df.pop('target')
+    test_df.drop('target', axis=1, inplace=True)
 
-    X_test = test_df.drop('target', axis=1)
-
-    return X_train, y_train, X_test
+    return train_df, y_train, test_df
 
 # lag features, scale -> log1p tr
 def prep(dataroot, num, max_lags, test_size=0.3, threshold=0.2):

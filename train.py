@@ -7,8 +7,6 @@ from functools import partial
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import TimeSeriesSplit, train_test_split, cross_val_score, KFold, cross_validate
 
-#mape_scorer = make_scorer(mape, greater_is_better=False)
-# run XGBoost algorithm with hyperparameters optimization
 def train_xgb(params, X_train, y_train, cv, scorer='neg_mean_squared_error', seed=42):
     """
     Train XGBoost regressor using the parameters given as input. The model
@@ -38,23 +36,29 @@ def train_xgb(params, X_train, y_train, cv, scorer='neg_mean_squared_error', see
         model = xgb.XGBRegressor(n_estimators=n_estimators,
                                  max_depth=max_depth,
                                  learning_rate=params["learning_rate"],
-                                 subsample=params["subsample"], seed=seed)
+                                 subsample=params["subsample"], 
+                                 seed=seed)
 
+        
         #result = model.fit(X_train,
         #                   y_train.values.ravel(),
         #                   eval_set=[(X_train, y_train.values.ravel())],
         #                   early_stopping_rounds=50,
         #                   verbose=False)
 
-        # cross validate using the right iterator for time series
-        #cv_space = KFold(n_splits=n_splits)
+        fit_params = {
+            'eval_set': [(X_train, y_train.values.ravel())],
+            'early_stopping_rounds': 50,
+            'verbose': False
+        }
 
         cv_score = cross_validate(
             model,
             X_train, y_train.values.ravel(),
             cv=cv,
             scoring=scorer,
-            return_estimator=True
+            return_estimator=True,
+            fit_params=fit_params
         )
 
         avg_score = np.abs(np.mean(np.array(cv_score['test_score'])))
@@ -70,7 +74,7 @@ def train_xgb(params, X_train, y_train, cv, scorer='neg_mean_squared_error', see
             "status": STATUS_FAIL
         }
 
-def optimize_xgb(X_train, y_train, n_splits=5, max_evals=10, cv=None, scorer='neg_mean_squared_error', seed=42):
+def optimize_xgb(X_train, y_train, max_evals=10, cv=None, scorer='neg_mean_squared_error', seed=42):
     """
     Run Bayesan optimization to find the optimal XGBoost algorithm
     hyperparameters.
