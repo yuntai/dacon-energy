@@ -7,34 +7,6 @@ from functools import partial
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import TimeSeriesSplit, train_test_split, cross_val_score, KFold, cross_validate
 
-def fit_xgb(params, X_train, y_train, seed=42):
-    n_estimators = int(params["n_estimators"])
-    max_depth= int(params["max_depth"])
-
-    try:
-        model = xgb.XGBRegressor(n_estimators=n_estimators,
-                                 max_depth=max_depth,
-                                 learning_rate=params["learning_rate"],
-                                 subsample=params["subsample"], 
-                                 seed=seed)
-        
-        result = model.fit(X_train,
-                           y_train.values.ravel(),
-                           eval_set=[(X_train, y_train.values.ravel())],
-                           early_stopping_rounds=50,
-                           verbose=False)
-
-        return {
-            "status": STATUS_OK,
-            "models": [model]
-        }
-
-    except ValueError as ex:
-        return {
-            "error": ex,
-            "status": STATUS_FAIL
-        }
-
 def train_xgb(params, X_train, y_train, cv, scorer='neg_mean_squared_error', seed=42):
     """
     Train XGBoost regressor using the parameters given as input. The model
@@ -80,23 +52,20 @@ def train_xgb(params, X_train, y_train, cv, scorer='neg_mean_squared_error', see
             'verbose': False
         }
 
-        return_estimator = False
         cv_score = cross_validate(
             model,
             X_train, y_train.values.ravel(),
             cv=cv,
             scoring=scorer,
-            return_estimator=return_estimator,
+            return_estimator=True,
             fit_params=fit_params
         )
 
-        scores = np.abs(np.array(cv_score['test_score']))
-        avg_score = np.mean(scores)
+        avg_score = np.abs(np.mean(np.array(cv_score['test_score'])))
         return {
             "loss": avg_score,
-            "scores": scores,
             "status": STATUS_OK,
-            #"models": cv_score['estimator']
+            "models": cv_score['estimator']
         }
 
     except ValueError as ex:

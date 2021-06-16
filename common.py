@@ -6,10 +6,39 @@ from sklearn.model_selection import train_test_split
 import pathlib
 import os
 import json
-from datetime import datetime
+import datetime
+
+def add_feats(df):
+    df.reset_index(drop=True, inplace=True)
+
+    df['THI'] = 9/5*df['temperature'] - 0.55*(1-df['humidity']/100)*(9/5*df['temperature']-26)+32
+
+    for num, g in df.groupby('num'):
+        cdh = (g['temperature']-26).rolling(window=12, min_periods=1).sum()
+        df.loc[cdh.index, 'CDH'] = cdh
+
+    cols = ['temperature', 'THI', 'CDH']
+    stats = ['min', 'max', 'mean', 'std']
+
+    g = df.groupby(['date', 'num'])
+    for c in cols:
+        col_mapper = {s:f"{s}_{c}" for s in stats}
+        val = g[c].agg(stats).reset_index().rename(col_mapper, axis=1)
+        df = df.merge(val, on=['date', 'num'], how='left')
+
+    g = df.groupby(['date'])
+    for c in cols:
+        col_mapper = {s:f"{s}_{c}_date" for s in stats}
+        val = g[c].agg(stats).reset_index().rename(col_mapper, axis=1)
+        df = df.merge(val, on=['date'], how='left')
+
+    df['date_num'] = df['month'] + df['day']/31.
+    df['THI_CAT'] = pd.cut(df.THI, [0, 68, 75, 80, 1000], right=False, labels=['THI_1', 'THI_2', 'THI_3', 'THI_4'])
+
+    return df
 
 def now():
-    return datetime.now().strftime("%Y%m%d%H%M%S")
+    return datetime.datetime.now().strftime("%Y%m%d%H%M%S")
 
 def ensemble(models, X_test):
     preds = []
@@ -34,12 +63,7 @@ def get_model_param(fn):
     num, seed, nweek = fn.split('.')[0].split('_')[1:]
     return num, seed, nweek
 
-def filter_df(df, num):
-    df = df[df.num==num].set_index('datetime').asfreq('1H', 'bfill')
-    df.drop(['date', 'num', 'day', 'month', 'nelec_cool_flag', 'solar_flag'], axis=1, inplace=True)
-    return df
-
-def prep_common(train_df, test_df, lags, target_scaler):
+def prep_common(train_df, test_df, lags):
     combined_df = pd.concat([train_df, test_df])
 
     lag_cols = []
@@ -67,6 +91,20 @@ def prep_common(train_df, test_df, lags, target_scaler):
 
     return train_df, test_df
 
+def interpolate(test_df):
+    methods = {
+        'temperature': 'quadratic',
+        'windspeed':'linear',
+        'humidity':'quadratic',
+        'precipitation':'linear',
+        'insolation': 'pad'
+    }
+
+    for col, method in methods.items():
+        test_df[col] = test_df[col].interpolate(method=method)
+        if method == 'quadratic':
+            test_df[col] = test_df[col].interpolate(method='linear')
+
 def prep_submission(dataroot, num, lags):
     train_df, test_df = read_df(dataroot)
     train_df = filter_df(train_df, num)
@@ -80,42 +118,67 @@ def prep_submission(dataroot, num, lags):
 
     return X_test, target_scaler
 
-# lag features, scale -> log1p tr
-def prep_full(dataroot, num):
-    train_df, test_df = read_df(dataroot)
+def prep_tst(dataroot, num):
+    train_df, test_df = read_df(dataroot, num)
 
-    train_df = filter_df(train_df, num)
-    test_df = filter_df(test_df, num)
+    interpolate(test_df)
 
-    test_df = test_df.interpolate()
+    s = train_df[train_df.datetime=='2020-06-01 00:00:00'].groupby(['temperature','windspeed']).ngroup()
+    s.name = 'mgrp'
+    mgrps = train_df[['num']].join(s, how='inner')
+
+    train_df = train_df.merge(mgrps, on='num', how='left')
+    test_df = test_df.merge(mgrps, on='num', how='left')
 
     sz = train_df.shape[0]
 
     combined_df = pd.concat([train_df, test_df])
 
-    dummies = ['hour', 'weekday', 'weekend']
-    for col in dummies:
-        dummy_df = pd.get_dummies(combined_df[col], prefix=col)
-        combined_df = combined_df.merge(dummy_df, left_index=True, right_index=True).drop(col, axis=1)
+    combined_df = add_feats(combined_df)
+
+    combined_df.drop(['month','day','date'], axis=1, inplace=True)
 
     train_df = combined_df.iloc[:sz].copy()
     test_df = combined_df.iloc[sz:].copy()
 
-    #train_df['target'] = np.log1p(train_df['target'])
+    return train_df, test_df
+
+def prep_full(dataroot, num):
+    train_df, test_df = read_df(dataroot, num)
+
+    interpolate(test_df)
+    test_idx = test_df.index
+
+    sz = train_df.shape[0]
 
     y_train = train_df.pop('target')
-    test_df.drop('target', axis=1, inplace=True)
 
-    return train_df, y_train, test_df
+    combined_df = pd.concat([train_df, test_df])
+
+    combined_df.reset_index(inplace=True)
+    combined_df = add_feats(combined_df)
+
+    dummies = ['hour', 'weekday', 'weekend', 'THI_CAT']
+    for col in dummies:
+        combined_df = combined_df.join(pd.get_dummies(combined_df[col], prefix=col)).drop(col, axis=1)
+
+    combined_df.drop(['num', 'month', 'day', 'date','solar_flag','nelec_cool_flag', 'datetime'], axis=1, inplace=True)
+
+    train_df = combined_df.iloc[:sz].copy()
+    test_df = combined_df.iloc[sz:].copy()
+
+    numerical_features = ['temperature', 'windspeed', 'humidity', 'precipitation', 'insolation', 'min_temperature', 'max_temperature', 'THI', 'mean_THI', 'CDH', 'mean_CDH', 'date_num']
+
+    for feat in numerical_features:
+        scaler = StandardScaler()
+        train_df[feat] = scaler.fit_transform(train_df[[feat]])
+        test_df[feat] = scaler.transform(test_df[[feat]])
+
+    return train_df, y_train, test_df, test_idx
 
 # lag features, scale -> log1p tr
 def prep(dataroot, num, max_lags, test_size=0.3, threshold=0.2):
-    train_df, test_df = read_df(dataroot)
-    train_df = filter_df(train_df, num)
-
-    target_scaler = get_scaler(np.log1p(train_df.target.values[:,None]))
-
-    sz = train_df.shape[0]
+    train_df, test_df = read_df(dataroot, num)
 
     if test_size != -1:
         if test_size == '2W':
@@ -128,18 +191,41 @@ def prep(dataroot, num, max_lags, test_size=0.3, threshold=0.2):
 
         test_df = train_df.loc[ix + pd.Timedelta('1H'):]
         train_df = train_df.loc[:ix]
+    sz = train_df.shape[0]
+
+    combined_df = pd.concat([train_df, test_df])
+
+    combined_df.reset_index(inplace=True)
+    #combined_df = add_feats(combined_df)
+
+    dummies = ['hour', 'weekday', 'weekend']
+    for col in dummies:
+        combined_df = combined_df.join(pd.get_dummies(combined_df[col], prefix=col)).drop(col, axis=1)
+
+    combined_df.drop(['num', 'month', 'day', 'date','solar_flag','nelec_cool_flag', 'datetime'], axis=1, inplace=True)
+
+    train_df = combined_df.iloc[:sz].copy()
+    test_df = combined_df.iloc[sz:].copy()
+
+    numerical_features = ['temperature', 'windspeed', 'humidity', 'precipitation', 'insolation']
+
+    for feat in numerical_features:
+        scaler = StandardScaler()
+        train_df[feat] = scaler.fit_transform(train_df[[feat]])
+        test_df[feat] = scaler.transform(test_df[[feat]])
+
 
     #assert sz == test_df.shape[0] + train_df.shape[0]
 
     #lags = [1, 2, 6, 12, 24, 7*24]
     lags = get_lags(train_df.target, max_lags, threshold)
 
-    train_df, test_df = prep_common(train_df, test_df, lags, target_scaler)
+    train_df, test_df = prep_common(train_df, test_df, lags)
 
     y_train, X_train = train_df.target, train_df.drop('target', axis=1)
     y_test, X_test = test_df.target, test_df.drop('target', axis=1)
 
-    return X_train, X_test, y_train, y_test, target_scaler, lags
+    return X_train, X_test, y_train, y_test, lags
 
 # MAPE computation
 def mape(y, yhat, perc=True):
@@ -157,7 +243,7 @@ def SMAPE(true, pred):
 
 # SMAPE computation
 def smape(A, F):
-    return 100/len(A) * np.sum(2*np.abs(F-A)/(np.abs(A)+np.abs(F)))
+    return 100./len(A) * np.sum(2*np.abs(F-A)/(np.abs(A)+np.abs(F)))
 
 def get_lags(y, max_lags, threshold):
     partial = pd.Series(data=pacf(y, nlags=max_lags))
@@ -203,23 +289,39 @@ train_columns = ['num','datetime','target','temperature','windspeed','humidity',
 test_columns = ['num','datetime','temperature','windspeed','humidity','precipitation','insolation','nelec_cool_flag','solar_flag']
 
 
-def read_df(dataroot):
+def read_df(dataroot, num):
     dataroot = pathlib.Path(dataroot) if type(dataroot) == str else dataroot
 
     def date_prep(df):
         df['datetime'] = pd.to_datetime(df['datetime'])
         df['hour'] = df['datetime'].dt.hour
         df['weekday'] = df['datetime'].dt.weekday
-        df['date'] = df['datetime'].dt.date
+        df['date'] = df['datetime'].dt.date.astype('str')
         df['day'] = df['datetime'].dt.day
         df['month'] = df['datetime'].dt.month
         df['weekend'] = df['weekday'].isin([5,6]).astype(int)
 
+        special_days = ['2020-06-06', '2020-08-15', '2020-08-17']
+        special_days = [datetime.date(*map(int,s.split("-"))) for s in special_days]
+
+        df['special_days'] = '-'
+        df.loc[df.date.isin(special_days), 'special_days'] = '1'
+
+        df['holiday'] = ((df.weekend==1) | (df.special_days == '1')).astype(int)
+        #if num != -1:
+        #    df = df.set_index('datetime').asfreq('1H', 'bfill')
+        return df
+
+
     train_df = pd.read_csv(dataroot/'train.csv', skiprows=[0], names=train_columns)
     test_df = pd.read_csv(dataroot/'test.csv', skiprows=[0], names=test_columns)
 
-    date_prep(train_df)
-    date_prep(test_df)
+    if num != -1:
+        train_df = train_df[train_df.num == num]
+        test_df = test_df[test_df.num == num]
+
+    train_df = date_prep(train_df)
+    test_df = date_prep(test_df)
 
     return train_df, test_df
 
@@ -332,7 +434,7 @@ def forecast_multi_recursive(y, model, lags, n_steps, step="1H"):
             features = ts_features.join(lags_features, how="outer").dropna()
         else:
             features = ts_features
-            
+
         predictions = model.predict(features)
         fcasted_values.append(predictions[-1])
 

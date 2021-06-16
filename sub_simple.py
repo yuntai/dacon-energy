@@ -10,15 +10,26 @@ from train import train_xgb
 from sklearn.model_selection import KFold
 from sklearn.metrics import make_scorer
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--num', '-n', type=int, default=-1, help='building number')
+parser.add_argument('--tag', '-t', default='test', type=str)
+args = parser.parse_args()
+
 dataroot = "./data"
 
 df = None
 scores = []
-for num in range(1, 61):
-    X_train, y_train, X_test = common.prep_full(dataroot, num)
+
+if args.num == -1:
+    R = range(1,61)
+else:
+    R = range(args.num, args.num+1)
+
+for num in R:
+    X_train, y_train, X_test, test_idx = common.prep_full(dataroot, num)
     y_train = np.log1p(y_train)
 
-    with open(f"./res_ccc/{num:02d}.json", "r") as inf:
+    with open(f"./res_{args.tag}/{num:02d}.json", "r") as inf:
         o = json.load(inf)
 
     cv = KFold(n_splits=5)
@@ -36,7 +47,7 @@ for num in range(1, 61):
         preds.append(np.array(pred))
     preds = np.stack(preds).mean(axis=0)
 
-    sub_df = pd.DataFrame(preds, index=X_test.index, columns=['answer']).reset_index()
+    sub_df = pd.DataFrame(preds, index=test_idx, columns=['answer']).reset_index()
     sub_df['num_date_time'] = sub_df['datetime'].apply(lambda t: t.strftime(f"{num} %Y-%m-%d %H"))
     sub_df.drop('datetime', axis=1)
     sub_df = sub_df[['num_date_time', 'answer']]
@@ -47,5 +58,5 @@ for num in range(1, 61):
         df = df.append(sub_df)
 
 print("avg score:", np.stack(scores).mean())
-df.to_csv(f'sub_{common.now()}.csv', index=False)
+df.to_csv(f'sub_{args.tag}_{common.now()}.csv', index=False)
 

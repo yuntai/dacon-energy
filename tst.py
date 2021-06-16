@@ -1,0 +1,242 @@
+import pytorch_lightning as pl
+import torch
+from pytorch_forecasting.data import (
+    TimeSeriesDataSet,
+    GroupNormalizer
+)
+from pytorch_lightning.callbacks import (
+    EarlyStopping,
+    LearningRateMonitor
+)
+from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_forecasting.metrics import QuantileLoss
+from pytorch_forecasting.models import TemporalFusionTransformer, Baseline
+from pytorch_forecasting.metrics import SMAPE
+import argparse
+import common
+import pandas as pd
+import numpy as np
+
+parser = argparse.ArgumentParser();
+parser.add_argument('--num', '-n', type=int, default=-1)
+parser.add_argument('--seed', type=int, default=42)
+args = parser.parse_args()
+print(args)
+
+train_df, test_df = common.prep_tst("./data", args.num)
+
+col_ix = train_df.columns.get_loc("datetime")
+train_df['time_idx'] = (train_df.loc[:, 'datetime'] - train_df.iloc[0, col_ix]).astype('timedelta64[h]').astype('int')
+data = train_df
+
+max_prediction_length = 24*2*7  # forecast 2 weeks
+max_encoder_length = 24*7*8 # use 2 months of history
+training_cutoff = data["time_idx"].max() - max_prediction_length
+
+data["log_target"] = np.log(data.target + 1e-8)
+
+cat_cols = ['num', 'weekday', 'weekend', 'hour', 'THI_CAT', "mgrp", "special_days", "holiday"]
+for col in cat_cols:
+    data[col] = data[col].astype(str).astype('category')
+
+training = TimeSeriesDataSet(
+    data[lambda x: x.time_idx <= training_cutoff],
+    time_idx="time_idx",
+    target="target",
+    group_ids=["num", "mgrp"],
+    min_encoder_length=1,
+    max_encoder_length=max_encoder_length,
+    min_prediction_length=1,
+    max_prediction_length=max_prediction_length,
+    time_varying_known_categoricals=cat_cols,
+    static_categoricals=["num", "mgrp"],
+    # group of categorical variables can be treated as 
+    # one variable
+    #variable_groups={"special_days": special_days},
+    time_varying_known_reals=[
+        "temperature",
+        "windspeed",
+        "humidity",
+        "precipitation",
+        "insolation",
+        'min_THI_date',
+        'max_THI_date',
+        'mean_THI_date',
+        'min_CDH_date',
+        'max_CDH_date',
+        'mean_CDH_date',
+        'min_temperature_date',
+        'max_temperature_date',
+        'mean_temperature_date',
+        'min_THI',
+        'max_THI',
+        'mean_THI',
+        'min_CDH',
+        'max_CDH',
+        'mean_CDH',
+        'THI',
+        'CDH',
+    ],
+    target_normalizer=GroupNormalizer(
+        groups=["num", "mgrp"], transformation="softplus"
+    ),
+    time_varying_unknown_categoricals=[],
+    time_varying_unknown_reals=[
+        "target",
+        "log_target"
+    ],
+    add_relative_time_idx=True,  # add as feature
+    add_target_scales=True,  # add as feature
+    add_encoder_length=True,  # add as feature
+)
+
+# create validation set (predict=True) which means to predict the
+# last max_prediction_length points in time for each series
+validation = TimeSeriesDataSet.from_dataset(
+    training, data, predict=True, stop_randomization=True
+)
+# create dataloaders for model
+batch_size = 128
+train_dataloader = training.to_dataloader(
+    train=True, batch_size=batch_size, num_workers=12
+)
+val_dataloader = validation.to_dataloader(
+    train=False, batch_size=batch_size * 10, num_workers=12
+)
+
+# calculate baseline mean absolute error, i.e. predict next value as the last available value from the history
+actuals = torch.cat([y for x, (y, weight) in iter(val_dataloader)])
+baseline_predictions = Baseline().predict(val_dataloader)
+print("baseline smape=", SMAPE(reduction='mean')(actuals, baseline_predictions).mean().item())
+
+if False:
+    from pytorch_forecasting.models.temporal_fusion_transformer.tuning import optimize_hyperparameters
+    print("start studying...")
+    # create study
+    study = optimize_hyperparameters(
+        train_dataloader,
+        val_dataloader,
+        model_path="optuna_test",
+        n_trials=200,
+        max_epochs=50,
+        gradient_clip_val_range=(0.01, 1.0),
+        hidden_size_range=(8, 128),
+        hidden_continuous_size_range=(8, 128),
+        attention_head_size_range=(1, 4),
+        learning_rate_range=(0.001, 0.1),
+        dropout_range=(0.1, 0.3),
+        trainer_kwargs=dict(limit_train_batches=30),
+        reduce_on_plateau_patience=4,
+        use_learning_rate_finder=False,  # use Optuna to find ideal learning rate or use in-built learning rate finder
+        verbose=1
+    )
+
+    # save study results - also we can resume tuning at a later point in time
+    with open("test_study.pkl", "wb") as fout:
+        pickle.dump(study, fout)
+        # show best hyperparameters
+    print(study.best_trial.params)
+    1/0
+
+
+
+
+if False:
+    pl.seed_everything(args.seed)
+    trainer = pl.Trainer(
+        gpus=0,
+        # clipping gradients is a hyperparameter and important to prevent divergance
+        # of the gradient for recurrent neural networks
+        gradient_clip_val=0.1,
+    )
+
+
+    tft = TemporalFusionTransformer.from_dataset(
+        training,
+        # not meaningful for finding the learning rate but otherwise very important
+        learning_rate=0.03,
+        hidden_size=16,  # most important hyperparameter apart from learning rate
+        # number of attention heads. Set to up to 4 for large datasets
+        attention_head_size=1,
+        dropout=0.1,  # between 0.1 and 0.3 are good values
+        hidden_continuous_size=8,  # set to <= hidden_size
+        output_size=7,  # 7 quantiles by default
+        loss=QuantileLoss(),
+        # reduce learning rate if no improvement in validation loss after x epochs
+        reduce_on_plateau_patience=4,
+    )
+    print(f"Number of parameters in network: {tft.size()/1e3:.1f}k")
+
+    # find optimal learning rate
+    res = trainer.tuner.lr_find(
+        tft,
+        train_dataloader=train_dataloader,
+        val_dataloaders=val_dataloader,
+        max_lr=10.0,
+        min_lr=1e-6,
+    )
+
+    print(f"suggested learning rate: {res.suggestion()}")
+    fig = res.plot(show=True, suggest=True)
+    fig.show()
+
+    import sys
+    sys.exit(0)
+
+
+# stop training, when loss metric does not improve on validation set
+early_stop_callback = EarlyStopping(
+    monitor="val_loss",
+    min_delta=1e-4,
+    patience=10,
+    verbose=False,
+    mode="min"
+)
+lr_logger = LearningRateMonitor()  # log the learning rate
+logger = TensorBoardLogger("lightning_logs")  # log to tensorboard
+
+# create trainer
+trainer = pl.Trainer(
+    max_epochs=30,
+    gpus=[0],  # train on CPU, use gpus = [0] to run on GPU
+    gradient_clip_val=0.1,
+    limit_train_batches=30,  # running validation every 30 batches
+    # fast_dev_run=True,  # comment in to quickly check for bugs
+    callbacks=[lr_logger, early_stop_callback],
+    logger=logger,
+)
+# initialise model
+tft = TemporalFusionTransformer.from_dataset(
+    training,
+    learning_rate=0.04,
+    hidden_size=16,  # biggest influence network size
+    attention_head_size=1,
+    dropout=0.1,
+    hidden_continuous_size=8,
+    output_size=7,  # QuantileLoss has 7 quantiles by default
+    loss=QuantileLoss(),
+    log_interval=10,  # log example every 10 batches
+    reduce_on_plateau_patience=4,  # reduce learning automatically
+)
+print(f"Number of parameters in network: {tft.size()/1e3:.1f}k")
+
+# fit network
+trainer.fit(
+    tft,
+    train_dataloader=train_dataloader,
+    val_dataloaders=val_dataloader
+)
+
+# evaluate
+
+# load the best model according to the validation loss (given that
+# we use early stopping, this is not necessarily the last epoch)
+best_model_path = trainer.checkpoint_callback.best_model_path
+best_tft = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
+# calculate mean absolute error on validation set
+actuals = torch.cat([y[0] for x, y in iter(val_dataloader)])
+predictions = best_tft.predict(val_dataloader)
+smape_per_num = SMAPE(reduction="none")(predictions, actuals).mean(1)
+print(f"{best_model_path=}")
+print(smape_per_num)
+print(smape_per_num.mean())
