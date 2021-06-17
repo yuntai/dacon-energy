@@ -11,14 +11,15 @@ import datetime
 def add_feats(df):
     df.reset_index(drop=True, inplace=True)
 
-    df['THI'] = 9/5*df['temperature'] - 0.55*(1-df['humidity']/100)*(9/5*df['temperature']-26)+32
+    #df['THI'] = 9/5*df['temperature'] - 0.55*(1-df['humidity']/100)*(9/5*df['temperature']-26)+32
 
-    for num, g in df.groupby('num'):
-        cdh = (g['temperature']-26).rolling(window=12, min_periods=1).sum()
-        df.loc[cdh.index, 'CDH'] = cdh
+    #for num, g in df.groupby('num'):
+    #    cdh = (g['temperature']-26).rolling(window=12, min_periods=1).sum()
+    #    df.loc[cdh.index, 'CDH'] = cdh
 
-    cols = ['temperature', 'THI', 'CDH']
-    stats = ['min', 'max', 'mean', 'std']
+    #cols = ['temperature', 'windspeed', 'humidity', 'precipitation', 'insolation']
+    cols = ['target']
+    stats = ['mean']
 
     g = df.groupby(['date', 'num'])
     for c in cols:
@@ -32,8 +33,8 @@ def add_feats(df):
         val = g[c].agg(stats).reset_index().rename(col_mapper, axis=1)
         df = df.merge(val, on=['date'], how='left')
 
-    df['date_num'] = df['month'] + df['day']/31.
-    df['THI_CAT'] = pd.cut(df.THI, [0, 68, 75, 80, 1000], right=False, labels=['THI_1', 'THI_2', 'THI_3', 'THI_4'])
+    #df['date_num'] = df['month'] + df['day']/31.
+    #df['THI_CAT'] = pd.cut(df.THI, [0, 68, 75, 80, 1000], right=False, labels=['THI_1', 'THI_2', 'THI_3', 'THI_4'])
 
     return df
 

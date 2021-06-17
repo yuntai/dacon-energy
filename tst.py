@@ -20,6 +20,7 @@ import numpy as np
 parser = argparse.ArgumentParser();
 parser.add_argument('--num', '-n', type=int, default=-1)
 parser.add_argument('--seed', type=int, default=42)
+parser.add_argument('--tune', default=False, action='store_true')
 args = parser.parse_args()
 print(args)
 
@@ -29,13 +30,15 @@ col_ix = train_df.columns.get_loc("datetime")
 train_df['time_idx'] = (train_df.loc[:, 'datetime'] - train_df.iloc[0, col_ix]).astype('timedelta64[h]').astype('int')
 data = train_df
 
-max_prediction_length = 24*2*7  # forecast 2 weeks
+max_prediction_length = 24*7*2  # forecast 2 weeks
 max_encoder_length = 24*7*8 # use 2 months of history
 training_cutoff = data["time_idx"].max() - max_prediction_length
 
 data["log_target"] = np.log(data.target + 1e-8)
 
-cat_cols = ['num', 'weekday', 'weekend', 'hour', 'THI_CAT', "mgrp", "special_days", "holiday"]
+
+#cat_cols = ['num', 'weekday', 'weekend', 'hour', 'THI_CAT', "mgrp", "special_days", "holiday"]
+cat_cols = ['num', 'weekday', 'weekend', 'hour', "mgrp", "special_days", "holiday"]
 for col in cat_cols:
     data[col] = data[col].astype(str).astype('category')
 
@@ -46,7 +49,7 @@ training = TimeSeriesDataSet(
     group_ids=["num", "mgrp"],
     min_encoder_length=1,
     max_encoder_length=max_encoder_length,
-    min_prediction_length=1,
+    min_prediction_length=max_prediction_length//2,
     max_prediction_length=max_prediction_length,
     time_varying_known_categoricals=cat_cols,
     static_categoricals=["num", "mgrp"],
@@ -59,23 +62,6 @@ training = TimeSeriesDataSet(
         "humidity",
         "precipitation",
         "insolation",
-        'min_THI_date',
-        'max_THI_date',
-        'mean_THI_date',
-        'min_CDH_date',
-        'max_CDH_date',
-        'mean_CDH_date',
-        'min_temperature_date',
-        'max_temperature_date',
-        'mean_temperature_date',
-        'min_THI',
-        'max_THI',
-        'mean_THI',
-        'min_CDH',
-        'max_CDH',
-        'mean_CDH',
-        'THI',
-        'CDH',
     ],
     target_normalizer=GroupNormalizer(
         groups=["num", "mgrp"], transformation="softplus"
@@ -83,7 +69,9 @@ training = TimeSeriesDataSet(
     time_varying_unknown_categoricals=[],
     time_varying_unknown_reals=[
         "target",
-        "log_target"
+        "log_target",
+        "mean_target",
+        "mean_target_date"
     ],
     add_relative_time_idx=True,  # add as feature
     add_target_scales=True,  # add as feature
@@ -109,7 +97,7 @@ actuals = torch.cat([y for x, (y, weight) in iter(val_dataloader)])
 baseline_predictions = Baseline().predict(val_dataloader)
 print("baseline smape=", SMAPE(reduction='mean')(actuals, baseline_predictions).mean().item())
 
-if False:
+if args.tune:
     from pytorch_forecasting.models.temporal_fusion_transformer.tuning import optimize_hyperparameters
     print("start studying...")
     # create study
@@ -128,7 +116,7 @@ if False:
         trainer_kwargs=dict(limit_train_batches=30),
         reduce_on_plateau_patience=4,
         use_learning_rate_finder=False,  # use Optuna to find ideal learning rate or use in-built learning rate finder
-        verbose=1
+        verbose=2
     )
 
     # save study results - also we can resume tuning at a later point in time
@@ -195,28 +183,31 @@ early_stop_callback = EarlyStopping(
 lr_logger = LearningRateMonitor()  # log the learning rate
 logger = TensorBoardLogger("lightning_logs")  # log to tensorboard
 
+PARAMS={'gradient_clip_val': 0.9658579636307634, 'hidden_size': 42, 'dropout': 0.19610151695402608, 'hidden_continuous_size': 30, 'attention_head_size': 4, 'learning_rate': 0.09692273805223026}
+
 # create trainer
 trainer = pl.Trainer(
     max_epochs=30,
     gpus=[0],  # train on CPU, use gpus = [0] to run on GPU
-    gradient_clip_val=0.1,
+    gradient_clip_val=PARAMS['gradient_clip_val'],
     limit_train_batches=30,  # running validation every 30 batches
     # fast_dev_run=True,  # comment in to quickly check for bugs
     callbacks=[lr_logger, early_stop_callback],
     logger=logger,
 )
+
 # initialise model
 tft = TemporalFusionTransformer.from_dataset(
     training,
-    learning_rate=0.04,
-    hidden_size=16,  # biggest influence network size
-    attention_head_size=1,
-    dropout=0.1,
-    hidden_continuous_size=8,
+    learning_rate=PARAMS['learning_rate'],
+    hidden_size=PARAMS['hidden_size'],
+    attention_head_size=PARAMS['attention_head_size'],
+    dropout=PARAMS['dropout'],
+    hidden_continuous_size=PARAMS['hidden_continuous_size'],
     output_size=7,  # QuantileLoss has 7 quantiles by default
     loss=QuantileLoss(),
     log_interval=10,  # log example every 10 batches
-    reduce_on_plateau_patience=4,  # reduce learning automatically
+    reduce_on_plateau_patience=16,  # reduce learning automatically
 )
 print(f"Number of parameters in network: {tft.size()/1e3:.1f}k")
 
