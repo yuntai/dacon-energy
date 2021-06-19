@@ -11,7 +11,7 @@ import datetime
 def add_feats(df):
     df.reset_index(drop=True, inplace=True)
 
-    #df['THI'] = 9/5*df['temperature'] - 0.55*(1-df['humidity']/100)*(9/5*df['temperature']-26)+32
+    df['THI'] = 9/5*df['temperature'] - 0.55*(1-df['humidity']/100)*(9/5*df['temperature']-26)+32
 
     #for num, g in df.groupby('num'):
     #    cdh = (g['temperature']-26).rolling(window=12, min_periods=1).sum()
@@ -23,9 +23,15 @@ def add_feats(df):
 
     g = df.groupby(['date', 'num'])
     for c in cols:
-        col_mapper = {s:f"{s}_{c}" for s in stats}
+        col_mapper = {s:f"{s}_{c}_num" for s in stats}
         val = g[c].agg(stats).reset_index().rename(col_mapper, axis=1)
         df = df.merge(val, on=['date', 'num'], how='left')
+
+    g = df.groupby(['date', 'mgrp'])
+    for c in cols:
+        col_mapper = {s:f"{s}_{c}_grp" for s in stats}
+        val = g[c].agg(stats).reset_index().rename(col_mapper, axis=1)
+        df = df.merge(val, on=['date', 'mgrp'], how='left')
 
     g = df.groupby(['date'])
     for c in cols:
@@ -119,12 +125,12 @@ def prep_submission(dataroot, num, lags):
 
     return X_test, target_scaler
 
-def prep_tst(dataroot, num):
-    train_df, test_df = read_df(dataroot, num)
+def prep_tst(dataroot, nums=[]):
+    train_df, test_df = read_df(dataroot, nums)
 
     interpolate(test_df)
 
-    s = train_df[train_df.datetime=='2020-06-01 00:00:00'].groupby(['temperature','windspeed']).ngroup()
+    s = train_df[train_df.datetime=='2020-06-01 00:00:00'].groupby(['temperature', 'windspeed']).ngroup()
     s.name = 'mgrp'
     mgrps = train_df[['num']].join(s, how='inner')
 
@@ -136,8 +142,6 @@ def prep_tst(dataroot, num):
     combined_df = pd.concat([train_df, test_df])
 
     combined_df = add_feats(combined_df)
-
-    combined_df.drop(['month','day','date'], axis=1, inplace=True)
 
     train_df = combined_df.iloc[:sz].copy()
     test_df = combined_df.iloc[sz:].copy()
@@ -163,7 +167,7 @@ def prep_full(dataroot, num):
     for col in dummies:
         combined_df = combined_df.join(pd.get_dummies(combined_df[col], prefix=col)).drop(col, axis=1)
 
-    combined_df.drop(['num', 'month', 'day', 'date','solar_flag','nelec_cool_flag', 'datetime'], axis=1, inplace=True)
+    combined_df.drop(['num', 'date','solar_flag','nelec_cool_flag', 'datetime'], axis=1, inplace=True)
 
     train_df = combined_df.iloc[:sz].copy()
     test_df = combined_df.iloc[sz:].copy()
@@ -290,7 +294,7 @@ train_columns = ['num','datetime','target','temperature','windspeed','humidity',
 test_columns = ['num','datetime','temperature','windspeed','humidity','precipitation','insolation','nelec_cool_flag','solar_flag']
 
 
-def read_df(dataroot, num):
+def read_df(dataroot, nums=[]):
     dataroot = pathlib.Path(dataroot) if type(dataroot) == str else dataroot
 
     def date_prep(df):
@@ -308,7 +312,7 @@ def read_df(dataroot, num):
         df['special_days'] = '-'
         df.loc[df.date.isin(special_days), 'special_days'] = '1'
 
-        df['holiday'] = ((df.weekend==1) | (df.special_days == '1')).astype(int)
+        #df['holiday'] = ((df.weekend==1) | (df.special_days == '1')).astype(int)
         #if num != -1:
         #    df = df.set_index('datetime').asfreq('1H', 'bfill')
         return df
@@ -317,9 +321,9 @@ def read_df(dataroot, num):
     train_df = pd.read_csv(dataroot/'train.csv', skiprows=[0], names=train_columns)
     test_df = pd.read_csv(dataroot/'test.csv', skiprows=[0], names=test_columns)
 
-    if num != -1:
-        train_df = train_df[train_df.num == num]
-        test_df = test_df[test_df.num == num]
+    if len(nums) > 0:
+        train_df = train_df[train_df.num.isin(nums)]
+        test_df = test_df[test_df.num.isin(nums)]
 
     train_df = date_prep(train_df)
     test_df = date_prep(test_df)

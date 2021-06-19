@@ -1,5 +1,6 @@
 import pytorch_lightning as pl
 import torch
+import sys
 from pytorch_forecasting.data import (
     TimeSeriesDataSet,
     GroupNormalizer
@@ -9,7 +10,7 @@ from pytorch_lightning.callbacks import (
     LearningRateMonitor
 )
 from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_forecasting.metrics import QuantileLoss
+from pytorch_forecasting.metrics import QuantileLoss, SMAPE, RMSE, MAE, CompositeMetric
 from pytorch_forecasting.models import TemporalFusionTransformer, Baseline
 from pytorch_forecasting.metrics import SMAPE
 import argparse
@@ -21,10 +22,12 @@ parser = argparse.ArgumentParser();
 parser.add_argument('--num', '-n', type=int, default=-1)
 parser.add_argument('--seed', type=int, default=42)
 parser.add_argument('--tune', default=False, action='store_true')
+#parser.add_argument("--nums", nargs="+", default=["a", "b"])
 args = parser.parse_args()
 print(args)
 
-train_df, test_df = common.prep_tst("./data", args.num)
+#nums = [4, 10, 11, 12, 28, 29, 30, 36, 40, 41, 42, 59, 60]
+train_df, test_df = common.prep_tst("./data")
 
 col_ix = train_df.columns.get_loc("datetime")
 train_df['time_idx'] = (train_df.loc[:, 'datetime'] - train_df.iloc[0, col_ix]).astype('timedelta64[h]').astype('int')
@@ -38,7 +41,7 @@ data["log_target"] = np.log(data.target + 1e-8)
 
 
 #cat_cols = ['num', 'weekday', 'weekend', 'hour', 'THI_CAT', "mgrp", "special_days", "holiday"]
-cat_cols = ['num', 'weekday', 'weekend', 'hour', "mgrp", "special_days", "holiday"]
+cat_cols = ['num', 'weekend', "mgrp", "special_days", "month"]
 for col in cat_cols:
     data[col] = data[col].astype(str).astype('category')
 
@@ -53,25 +56,31 @@ training = TimeSeriesDataSet(
     max_prediction_length=max_prediction_length,
     time_varying_known_categoricals=cat_cols,
     static_categoricals=["num", "mgrp"],
-    # group of categorical variables can be treated as 
-    # one variable
+    # group of categorical variables can be treated as one variable
     #variable_groups={"special_days": special_days},
     time_varying_known_reals=[
+        "time_idx",
         "temperature",
         "windspeed",
         "humidity",
         "precipitation",
         "insolation",
+        "hour",
+        "weekday",
+        "day",
     ],
     target_normalizer=GroupNormalizer(
-        groups=["num", "mgrp"], transformation="softplus"
+        groups=["num", "mgrp"],
+        transformation="softplus"
+        #transformation="log1p"
     ),
     time_varying_unknown_categoricals=[],
     time_varying_unknown_reals=[
         "target",
         "log_target",
-        "mean_target",
-        "mean_target_date"
+        "mean_target_num",
+        "mean_target_date",
+        "mean_target_grp"
     ],
     add_relative_time_idx=True,  # add as feature
     add_target_scales=True,  # add as feature
@@ -124,12 +133,10 @@ if args.tune:
         pickle.dump(study, fout)
         # show best hyperparameters
     print(study.best_trial.params)
-    1/0
-
-
-
+    sys.exit(0)
 
 if False:
+    # LR finder
     pl.seed_everything(args.seed)
     trainer = pl.Trainer(
         gpus=0,
@@ -149,7 +156,7 @@ if False:
         dropout=0.1,  # between 0.1 and 0.3 are good values
         hidden_continuous_size=8,  # set to <= hidden_size
         output_size=7,  # 7 quantiles by default
-        loss=QuantileLoss(),
+        loss=SMAPE(),
         # reduce learning rate if no improvement in validation loss after x epochs
         reduce_on_plateau_patience=4,
     )
@@ -168,26 +175,33 @@ if False:
     fig = res.plot(show=True, suggest=True)
     fig.show()
 
-    import sys
     sys.exit(0)
 
+# TRAINING
+PARAMS = {
+    'gradient_clip_val': 0.9658579636307634,
+    'hidden_size': 80,
+    'dropout': 0.19610151695402608,
+    'hidden_continuous_size': 40,
+    'attention_head_size': 4,
+    'learning_rate': 0.09692273805223026
+}
 
 # stop training, when loss metric does not improve on validation set
 early_stop_callback = EarlyStopping(
     monitor="val_loss",
-    min_delta=1e-4,
+    min_delta=1e-3,
     patience=10,
-    verbose=False,
+    verbose=True,
     mode="min"
 )
+
 lr_logger = LearningRateMonitor()  # log the learning rate
 logger = TensorBoardLogger("lightning_logs")  # log to tensorboard
 
-PARAMS={'gradient_clip_val': 0.9658579636307634, 'hidden_size': 42, 'dropout': 0.19610151695402608, 'hidden_continuous_size': 30, 'attention_head_size': 4, 'learning_rate': 0.09692273805223026}
-
 # create trainer
 trainer = pl.Trainer(
-    max_epochs=30,
+    max_epochs=60,
     gpus=[0],  # train on CPU, use gpus = [0] to run on GPU
     gradient_clip_val=PARAMS['gradient_clip_val'],
     limit_train_batches=30,  # running validation every 30 batches
@@ -195,6 +209,8 @@ trainer = pl.Trainer(
     callbacks=[lr_logger, early_stop_callback],
     logger=logger,
 )
+
+loss_fn = SMAPE()
 
 # initialise model
 tft = TemporalFusionTransformer.from_dataset(
@@ -204,10 +220,10 @@ tft = TemporalFusionTransformer.from_dataset(
     attention_head_size=PARAMS['attention_head_size'],
     dropout=PARAMS['dropout'],
     hidden_continuous_size=PARAMS['hidden_continuous_size'],
-    output_size=7,  # QuantileLoss has 7 quantiles by default
-    loss=QuantileLoss(),
+    output_size=1,  # QuantileLoss has 7 quantiles by default
+    loss=loss_fn,
     log_interval=10,  # log example every 10 batches
-    reduce_on_plateau_patience=16,  # reduce learning automatically
+    reduce_on_plateau_patience=4,  # reduce learning automatically
 )
 print(f"Number of parameters in network: {tft.size()/1e3:.1f}k")
 
@@ -231,3 +247,13 @@ smape_per_num = SMAPE(reduction="none")(predictions, actuals).mean(1)
 print(f"{best_model_path=}")
 print(smape_per_num)
 print(smape_per_num.mean())
+
+#
+#tensor([0.0069, 0.0735, 0.0497, 0.0495, 0.0448, 0.0355, 0.0910, 0.0306, 0.0657,
+#        0.1214, 0.1062, 0.0385, 0.0892, 0.0812, 0.0638, 0.1145, 0.0426, 0.1075,
+#        0.0434, 0.1144, 0.0448, 0.0858, 0.0223, 0.0770, 0.0137, 0.0069, 0.0147,
+#        0.1224, 0.0994, 0.0605, 0.0457, 0.0452, 0.0716, 0.1777, 0.0997, 0.0781,
+#        0.1085, 0.0664, 0.0379, 0.0584, 0.0622, 0.0473, 0.1357, 0.1095, 0.1084,
+#        0.1211, 0.0623, 0.0427, 0.0513, 0.0581, 0.0644, 0.0776, 0.0952, 0.0631,
+#        0.1442, 0.0678, 0.0438, 0.1025, 0.0849, 0.0352])
+
