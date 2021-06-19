@@ -26,80 +26,9 @@ parser.add_argument('--tune', default=False, action='store_true')
 args = parser.parse_args()
 print(args)
 
-#nums = [4, 10, 11, 12, 28, 29, 30, 36, 40, 41, 42, 59, 60]
-train_df, test_df = common.prep_tst("./data")
+from tst_load_data import load_data
 
-col_ix = train_df.columns.get_loc("datetime")
-train_df['time_idx'] = (train_df.loc[:, 'datetime'] - train_df.iloc[0, col_ix]).astype('timedelta64[h]').astype('int')
-data = train_df
-
-max_prediction_length = 24*7*2  # forecast 2 weeks
-max_encoder_length = 24*7*8 # use 2 months of history
-training_cutoff = data["time_idx"].max() - max_prediction_length
-
-data["log_target"] = np.log(data.target + 1e-8)
-
-
-#cat_cols = ['num', 'weekday', 'weekend', 'hour', 'THI_CAT', "mgrp", "special_days", "holiday"]
-cat_cols = ['num', 'weekend', "mgrp", "special_days", "month"]
-for col in cat_cols:
-    data[col] = data[col].astype(str).astype('category')
-
-training = TimeSeriesDataSet(
-    data[lambda x: x.time_idx <= training_cutoff],
-    time_idx="time_idx",
-    target="target",
-    group_ids=["num", "mgrp"],
-    min_encoder_length=1,
-    max_encoder_length=max_encoder_length,
-    min_prediction_length=max_prediction_length//2,
-    max_prediction_length=max_prediction_length,
-    time_varying_known_categoricals=cat_cols,
-    static_categoricals=["num", "mgrp"],
-    # group of categorical variables can be treated as one variable
-    #variable_groups={"special_days": special_days},
-    time_varying_known_reals=[
-        "time_idx",
-        "temperature",
-        "windspeed",
-        "humidity",
-        "precipitation",
-        "insolation",
-        "hour",
-        "weekday",
-        "day",
-    ],
-    target_normalizer=GroupNormalizer(
-        groups=["num", "mgrp"],
-        transformation="softplus"
-        #transformation="log1p"
-    ),
-    time_varying_unknown_categoricals=[],
-    time_varying_unknown_reals=[
-        "target",
-        "log_target",
-        "mean_target_num",
-        "mean_target_date",
-        "mean_target_grp"
-    ],
-    add_relative_time_idx=True,  # add as feature
-    add_target_scales=True,  # add as feature
-    add_encoder_length=True,  # add as feature
-)
-
-# create validation set (predict=True) which means to predict the
-# last max_prediction_length points in time for each series
-validation = TimeSeriesDataSet.from_dataset(
-    training, data, predict=True, stop_randomization=True
-)
-# create dataloaders for model
-batch_size = 128
-train_dataloader = training.to_dataloader(
-    train=True, batch_size=batch_size, num_workers=12
-)
-val_dataloader = validation.to_dataloader(
-    train=False, batch_size=batch_size * 10, num_workers=12
-)
+train_dataloader, val_dataloader, training = load_data("./data")
 
 # calculate baseline mean absolute error, i.e. predict next value as the last available value from the history
 actuals = torch.cat([y for x, (y, weight) in iter(val_dataloader)])

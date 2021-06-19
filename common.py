@@ -11,33 +11,34 @@ import datetime
 def add_feats(df):
     df.reset_index(drop=True, inplace=True)
 
-    df['THI'] = 9/5*df['temperature'] - 0.55*(1-df['humidity']/100)*(9/5*df['temperature']-26)+32
+    #df['THI'] = 9/5*df['temperature'] - 0.55*(1-df['humidity']/100)*(9/5*df['temperature']-26) + 32
 
     #for num, g in df.groupby('num'):
     #    cdh = (g['temperature']-26).rolling(window=12, min_periods=1).sum()
     #    df.loc[cdh.index, 'CDH'] = cdh
 
     #cols = ['temperature', 'windspeed', 'humidity', 'precipitation', 'insolation']
-    cols = ['target']
+    cols = ['target', 'precipitation', 'insolation']
+    #cols = ['target']
     stats = ['mean']
 
     g = df.groupby(['date', 'num'])
-    for c in cols:
-        col_mapper = {s:f"{s}_{c}_num" for s in stats}
-        val = g[c].agg(stats).reset_index().rename(col_mapper, axis=1)
-        df = df.merge(val, on=['date', 'num'], how='left')
+    for s in stats:
+        col_mapper = {c:f"{s}_{c}_num" for c in cols}
+        tr = g[cols].transform(s).rename(col_mapper, axis=1)
+        df = pd.concat([df, tr], axis=1)
 
     g = df.groupby(['date', 'mgrp'])
-    for c in cols:
-        col_mapper = {s:f"{s}_{c}_grp" for s in stats}
-        val = g[c].agg(stats).reset_index().rename(col_mapper, axis=1)
-        df = df.merge(val, on=['date', 'mgrp'], how='left')
+    for s in stats:
+        col_mapper = {c:f"{s}_{c}_mgrp" for c in cols}
+        tr = g[cols].transform(s).rename(col_mapper, axis=1)
+        df = pd.concat([df, tr], axis=1)
 
     g = df.groupby(['date'])
-    for c in cols:
-        col_mapper = {s:f"{s}_{c}_date" for s in stats}
-        val = g[c].agg(stats).reset_index().rename(col_mapper, axis=1)
-        df = df.merge(val, on=['date'], how='left')
+    for s in stats:
+        col_mapper = {c:f"{s}_{c}" for c in cols}
+        tr = g[cols].transform(s).rename(col_mapper, axis=1)
+        df = pd.concat([df, tr], axis=1)
 
     #df['date_num'] = df['month'] + df['day']/31.
     #df['THI_CAT'] = pd.cut(df.THI, [0, 68, 75, 80, 1000], right=False, labels=['THI_1', 'THI_2', 'THI_3', 'THI_4'])
@@ -134,12 +135,10 @@ def prep_tst(dataroot, nums=[]):
     s.name = 'mgrp'
     mgrps = train_df[['num']].join(s, how='inner')
 
-    train_df = train_df.merge(mgrps, on='num', how='left')
-    test_df = test_df.merge(mgrps, on='num', how='left')
-
     sz = train_df.shape[0]
 
     combined_df = pd.concat([train_df, test_df])
+    combined_df = combined_df.merge(mgrps, on='num', how='left')
 
     combined_df = add_feats(combined_df)
 
