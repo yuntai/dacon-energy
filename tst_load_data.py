@@ -32,8 +32,8 @@ def load_data(dataroot="./data", nums=[]):
     data["log_target"] = np.log(data.target + 1e-8)
 
     #cat_cols = ['num', 'weekend', 'hour', 'THI_CAT', "mgrp", "special_days", "holiday"]
-    cat_cols = ['num', "mgrp", 'holiday', 'dow']
-    for col in cat_cols:
+    cate_cols = ['num', "mgrp", 'holiday', 'dow']
+    for col in cate_cols:
         data[col] = data[col].astype(str).astype('category')
 
     training = TimeSeriesDataSet(
@@ -45,7 +45,7 @@ def load_data(dataroot="./data", nums=[]):
         max_encoder_length=max_encoder_length,
         min_prediction_length=max_prediction_length//2,
         max_prediction_length=max_prediction_length,
-        time_varying_known_categoricals=cat_cols,
+        time_varying_known_categoricals=cate_cols,
         static_categoricals=["num", "mgrp"],
         # group of categorical variables can be treated as one variable
         #variable_groups={"special_days": special_days},

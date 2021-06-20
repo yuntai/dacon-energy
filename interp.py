@@ -1,4 +1,5 @@
 from tst_load_data import load_data
+import matplotlib.pyplot as plt
 import argparse
 import copy
 from pathlib import Path
@@ -27,4 +28,6 @@ tr_loader, va_loader, training = load_data("./data")
 raw_predictions, x = best_tft.predict(va_loader, mode="raw", return_x=True)
 interpretation = best_tft.interpret_output(raw_predictions, reduction="sum")
 best_tft.plot_interpretation(interpretation)
+plt.show()
+
 

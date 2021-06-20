@@ -40,7 +40,6 @@ def add_feats(df):
         tr = g[cols].transform(s).rename(col_mapper, axis=1)
         df = pd.concat([df, tr], axis=1)
 
-    #df['date_num'] = df['month'] + df['day']/31.
     #df['THI_CAT'] = pd.cut(df.THI, [0, 68, 75, 80, 1000], right=False, labels=['THI_1', 'THI_2', 'THI_3', 'THI_4'])
 
     return df
