@@ -8,46 +8,60 @@ import os
 import json
 import datetime
 
+cluster = {
+    0: [19, 20, 21, 49, 50, 51],
+    1: [1, 5, 9, 34],
+    2: [4, 10, 11, 12, 28, 29, 30, 36, 40, 41, 42, 59, 60],
+    3: [2, 3, 6, 7, 8, 13, 14, 15, 16, 17, 18, 22, 23, 24, 25, 26, 27, 31, 32, 33, 35, 37, 38, 39, 43, 44, 45, 46, 47, 48, 52, 53, 54, 55, 56, 57, 58],
+}
+
+def date_prep(df):
+
+    df['datetime'] = pd.to_datetime(df['datetime'])
+    df['hour'] = df['datetime'].dt.hour
+    df['dow'] = df['datetime'].dt.weekday
+    df['date'] = df['datetime'].dt.date.astype('str')
+    df['day'] = df['datetime'].dt.day
+    df['month'] = df['datetime'].dt.month
+
+    special_days = ['2020-06-06', '2020-08-15', '2020-08-17']
+    df['holiday'] = df['dow'].isin([5,6]).astype(int)
+    df.loc[df.date.isin(special_days), 'holiday'] = 1
+
+    hot = df.groupby('date').first()['holiday'].shift(-1).fillna(0).astype(int)
+    hot = hot.to_frame().reset_index().rename({'holiday': "hot"}, axis=1)
+    df = df.merge(hot, on='date', how='left')
+
+    h = (df.groupby('date').first()['holiday'] != 0).iloc[::-1]
+    df1 = h.cumsum() - h.cumsum().where(~h).ffill().fillna(0).astype(int).iloc[::-1]
+    df1 = df1.to_frame().reset_index().rename({'holiday': "cumhol"}, axis=1)
+    df = df.merge(df1, on='date', how='left')
+
+    return df
+
 def read_df(dataroot, nums=[]):
     train_columns = ['num','datetime','target','temperature','windspeed','humidity','precipitation','insolation','nelec_cool_flag','solar_flag']
-    test_columns = ['num','datetime','temperature','windspeed','humidity','precipitation','insolation','nelec_cool_flag','solar_flag']
+    test_columns = [c for c in train_columns if c != 'target']
 
     dataroot = pathlib.Path(dataroot) if type(dataroot) == str else dataroot
 
-    def date_prep(df):
-        df['datetime'] = pd.to_datetime(df['datetime'])
-        df['hour'] = df['datetime'].dt.hour
-        df['dow'] = df['datetime'].dt.weekday
-        df['date'] = df['datetime'].dt.date.astype('str')
-        df['day'] = df['datetime'].dt.day
-        df['month'] = df['datetime'].dt.month
-
-        special_days = ['2020-06-06', '2020-08-15', '2020-08-17']
-        df['holiday'] = df['dow'].isin([5,6]).astype(int)
-        df.loc[df.date.isin(special_days), 'holiday'] = 1
-
-        h = df.groupby('date').first()['holiday'] != 0
-        h = h.shift(-1).fillna(False).iloc[::-1]
-        df1 = h.cumsum()-h.cumsum().where(~h).ffill().fillna(0).astype(int).iloc[::-1]
-        df1 = df1.to_frame().reset_index().rename({'holiday': "cumhol"}, axis=1)
-        df = df.merge(df1, on='date', how='left')
-
-        #if num != -1:
-        #    df = df.set_index('datetime').asfreq('1H', 'bfill')
-        return df
-
-
-    train_df = pd.read_csv(dataroot/'train.csv', skiprows=[0], names=train_columns)
-    test_df = pd.read_csv(dataroot/'test.csv', skiprows=[0], names=test_columns)
+    train_df = pd.read_csv(dataroot/'train.csv', header=0, names=train_columns)
+    test_df = pd.read_csv(dataroot/'test.csv', header=0, names=test_columns)
 
     if len(nums) > 0:
         train_df = train_df[train_df.num.isin(nums)]
         test_df = test_df[test_df.num.isin(nums)]
 
-    train_df = date_prep(train_df)
-    test_df = date_prep(test_df)
+    __sz = train_df.shape[0]
 
-    return train_df, test_df
+    df = pd.concat([train_df, test_df])
+
+    for k, nums in cluster.items():
+        df.loc[df.num.isin(nums), 'cluster'] = k
+
+    df = date_prep(df)
+
+    return df.iloc[:__sz].copy(), df.iloc[__sz:].copy()
 
 def interpolate(test_df):
     methods = {
