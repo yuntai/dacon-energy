@@ -57,6 +57,7 @@ def load_data(dataroot="./data", nums=[]):
             "precipitation",
             "insolation",
             "hour",
+            "cumhol"
         ],
         target_normalizer=GroupNormalizer(
             groups=["num", "mgrp"],
