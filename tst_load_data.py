@@ -19,7 +19,6 @@ import pandas as pd
 import numpy as np
 
 def load_data(dataroot="./data", nums=[]):
-    #nums = [4, 10, 11, 12, 28, 29, 30, 36, 40, 41, 42, 59, 60]
     train_df, test_df = common.prep_tst(dataroot)
 
     col_ix = train_df.columns.get_loc("datetime")
@@ -33,7 +32,7 @@ def load_data(dataroot="./data", nums=[]):
     data["log_target"] = np.log(data.target + 1e-8)
 
     #cat_cols = ['num', 'weekday', 'weekend', 'hour', 'THI_CAT', "mgrp", "special_days", "holiday"]
-    cat_cols = ['num', "mgrp", "special_days", 'holiday']
+    cat_cols = ['num', "mgrp", 'holiday']
     for col in cat_cols:
         data[col] = data[col].astype(str).astype('category')
 
