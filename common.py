@@ -402,10 +402,10 @@ class TargetTransformer:
         return pd.Series(index=data.index, data=trend)
 
 def forecast_multi_recursive(y, model, lags, n_steps, step="1H"):
-    
-    """Multi-step recursive forecasting using the input time 
+
+    """Multi-step recursive forecasting using the input time
     series data and a pre-trained machine learning model
-    
+
     Parameters
     ----------
     y: pd.Series holding the input time-series to forecast
@@ -413,12 +413,12 @@ def forecast_multi_recursive(y, model, lags, n_steps, step="1H"):
     lags: list of lags used for training the model
     n_steps: number of time periods in the forecasting horizon
     step: forecasting time period given as Pandas time series frequencies
-    
+
     Returns
     -------
-    fcast_values: pd.Series with forecasted values indexed by forecast horizon dates 
+    fcast_values: pd.Series with forecasted values indexed by forecast horizon dates
     """
-    
+
     # get the dates to forecast
     last_date = y.index[-1] + pd.Timedelta(hours=1)
     fcast_range = pd.date_range(last_date, periods=n_steps, freq=step)
@@ -428,7 +428,7 @@ def forecast_multi_recursive(y, model, lags, n_steps, step="1H"):
 
     for date in fcast_range:
 
-        new_point = fcasted_values[-1] if len(fcasted_values) > 0 else 0.0   
+        new_point = fcasted_values[-1] if len(fcasted_values) > 0 else 0.0
         target = target.append(pd.Series(index=[date], data=new_point))
 
         # forecast
