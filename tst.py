@@ -113,7 +113,7 @@ PARAMS = {
     'dropout': 0.19610151695402608,
     'hidden_continuous_size': 40,
     'attention_head_size': 4,
-    'learning_rate': 0.09692273805223026
+    'learning_rate': 0.085
 }
 
 # stop training, when loss metric does not improve on validation set

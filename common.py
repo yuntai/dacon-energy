@@ -303,15 +303,11 @@ def read_df(dataroot, nums=[]):
         df['date'] = df['datetime'].dt.date.astype('str')
         df['day'] = df['datetime'].dt.day
         df['month'] = df['datetime'].dt.month
-        df['weekend'] = df['weekday'].isin([5,6]).astype(int)
 
         special_days = ['2020-06-06', '2020-08-15', '2020-08-17']
-        special_days = [datetime.date(*map(int,s.split("-"))) for s in special_days]
+        df['holiday'] = df['weekday'].isin([5,6]).astype(int)
+        df.loc[df.date.isin(special_days), 'holiday'] = 1
 
-        df['special_days'] = '-'
-        df.loc[df.date.isin(special_days), 'special_days'] = '1'
-
-        #df['holiday'] = ((df.weekend==1) | (df.special_days == '1')).astype(int)
         #if num != -1:
         #    df = df.set_index('datetime').asfreq('1H', 'bfill')
         return df
