@@ -108,9 +108,16 @@ def add_feats(df):
     #    df.loc[cdh.index, 'CDH'] = cdh
 
     #cols = ['temperature', 'windspeed', 'humidity', 'precipitation', 'insolation']
-    cols = ['target', 'precipitation', 'insolation']
+    cols = ['target']
     #cols = ['target']
     stats = ['mean']
+
+    # target null in test set to null for other columns care must be taken
+    g = df.groupby(['date', 'cluster'])
+    for s in stats:
+        col_mapper = {c:f"{s}_{c}_cluster" for c in cols}
+        tr = g[cols].transform(s).rename(col_mapper, axis=1)
+        df = pd.concat([df, tr], axis=1)
 
     g = df.groupby(['date', 'num'])
     for s in stats:

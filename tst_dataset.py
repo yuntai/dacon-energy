@@ -63,9 +63,10 @@ def load_dataset(dataroot="./data", nums=[]):
         time_varying_unknown_reals=[
             "target",
             "log_target",
+            "mean_target",
             "mean_target_num",
             "mean_target_mgrp",
-            "mean_target",
+            "mean_target_cluster"
         ],
         add_relative_time_idx=True,  # add as feature
         add_target_scales=True,  # add as feature
