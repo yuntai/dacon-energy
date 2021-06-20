@@ -299,13 +299,13 @@ def read_df(dataroot, nums=[]):
     def date_prep(df):
         df['datetime'] = pd.to_datetime(df['datetime'])
         df['hour'] = df['datetime'].dt.hour
-        df['weekday'] = df['datetime'].dt.weekday
+        df['dow'] = df['datetime'].dt.weekday
         df['date'] = df['datetime'].dt.date.astype('str')
         df['day'] = df['datetime'].dt.day
         df['month'] = df['datetime'].dt.month
 
         special_days = ['2020-06-06', '2020-08-15', '2020-08-17']
-        df['holiday'] = df['weekday'].isin([5,6]).astype(int)
+        df['holiday'] = df['dow'].isin([5,6]).astype(int)
         df.loc[df.date.isin(special_days), 'holiday'] = 1
 
         h = df.groupby('date').first()['holiday'].iloc[::-1] != 0

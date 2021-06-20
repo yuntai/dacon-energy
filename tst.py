@@ -22,6 +22,7 @@ parser = argparse.ArgumentParser();
 parser.add_argument('--num', '-n', type=int, default=-1)
 parser.add_argument('--seed', type=int, default=42)
 parser.add_argument('--tune', default=False, action='store_true')
+parser.add_argument('--logdir', type=str, default="./logs")
 #parser.add_argument("--nums", nargs="+", default=["a", "b"])
 args = parser.parse_args()
 print(args)
@@ -126,7 +127,7 @@ early_stop_callback = EarlyStopping(
 )
 
 lr_logger = LearningRateMonitor()  # log the learning rate
-logger = TensorBoardLogger("lightning_logs")  # log to tensorboard
+logger = TensorBoardLogger(args.logdir)  # log to tensorboard
 
 # create trainer
 trainer = pl.Trainer(

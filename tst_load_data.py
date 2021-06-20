@@ -31,8 +31,8 @@ def load_data(dataroot="./data", nums=[]):
 
     data["log_target"] = np.log(data.target + 1e-8)
 
-    #cat_cols = ['num', 'weekday', 'weekend', 'hour', 'THI_CAT', "mgrp", "special_days", "holiday"]
-    cat_cols = ['num', "mgrp", 'holiday']
+    #cat_cols = ['num', 'weekend', 'hour', 'THI_CAT', "mgrp", "special_days", "holiday"]
+    cat_cols = ['num', "mgrp", 'holiday', 'dow']
     for col in cat_cols:
         data[col] = data[col].astype(str).astype('category')
 
