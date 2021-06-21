@@ -27,8 +27,8 @@ def load_dataset(dataroot="./data", nums=[]):
     #data = train_df[(train_df.time_idx < 1872)].copy()
 
     max_encoder_length = 24*7*5 # use up to 6 weeks of history
-    max_prediction_length = 24*7*2  # forecast 1 week
-    training_cutoff = data["time_idx"].max() - max_prediction_length
+    max_prediction_length = 24*7*1  # forecast 1 week
+    training_cutoff = data["time_idx"].max() - 2*max_prediction_length
 
     data["log_target"] = np.log(data.target + 1e-8)
 
