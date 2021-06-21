@@ -16,11 +16,9 @@ from pytorch_lightning.callbacks import (
     EarlyStopping,
     LearningRateMonitor
 )
-from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_forecasting.metrics import QuantileLoss, SMAPE, RMSE, MAE, CompositeMetric
 from pytorch_forecasting.models import TemporalFusionTransformer, Baseline
-from pytorch_forecasting.metrics import SMAPE
 
 parser = argparse.ArgumentParser();
 parser.add_argument('--num', '-n', type=int, default=-1)
@@ -50,15 +48,15 @@ print("baseline smape=", SMAPE(reduction='mean')(actuals, baseline_predictions).
 # TRAINING
 PARAMS = {
     'gradient_clip_val': 0.9658579636307634,
-    'hidden_size': 80,
+    'hidden_size': 180,
     'dropout': 0.19610151695402608,
-    'hidden_continuous_size': 40,
+    'hidden_continuous_size': 90,
     'attention_head_size': 4,
     'learning_rate': 0.08
 }
 
 # stop training, when loss metric does not improve on validation set
-early_stop_callback = EarlyStopping(
+early_stopping_callback = EarlyStopping(
     monitor="val_loss",
     min_delta=1e-4,
     patience=10,
@@ -66,18 +64,22 @@ early_stop_callback = EarlyStopping(
     mode="min"
 )
 
+torch.multiprocessing.freeze_support()
+
 lr_logger = LearningRateMonitor()  # log the learning rate
 logger = TensorBoardLogger(args.logdir)  # log to tensorboard
 #logger = WandbLogger()
 
 # create trainer
 trainer = pl.Trainer(
-    max_epochs=60,
-    gpus=[0],  # train on CPU, use gpus = [0] to run on GPU
+    max_epochs=50,
+    gpus=[0],
+    #gpus=[0,1],  # train on CPU, use gpus = [0] to run on GPU
+    #accelerator='dp',
     gradient_clip_val=PARAMS['gradient_clip_val'],
     limit_train_batches=30,  # running validation every 30 batches
     # fast_dev_run=True,  # comment in to quickly check for bugs
-    callbacks=[lr_logger, early_stop_callback],
+    callbacks=[lr_logger, early_stopping_callback],
     logger=logger,
 )
 

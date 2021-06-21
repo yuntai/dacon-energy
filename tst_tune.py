@@ -21,7 +21,6 @@ import numpy as np
 parser = argparse.ArgumentParser();
 parser.add_argument('--seed', type=int, default=42)
 parser.add_argument('--logdir', type=str, default="./logs")
-#parser.add_argument("--nums", nargs="+", default=["a", "b"])
 args = parser.parse_args()
 print(args)
 

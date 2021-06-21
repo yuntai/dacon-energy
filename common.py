@@ -24,8 +24,6 @@ def date_prep(df):
     df['day'] = df['datetime'].dt.day
     df['month'] = df['datetime'].dt.month
 
-    df['hour2'] = (df['hour']/3).astype(int)
-
     special_days = ['2020-06-06', '2020-08-15', '2020-08-17']
     df['holiday'] = df['dow'].isin([5,6]).astype(int)
     df.loc[df.date.isin(special_days), 'holiday'] = 1

@@ -51,13 +51,13 @@ def load_dataset(dataroot="./data", nums=[]):
         #variable_groups={"special_days": special_days},
         time_varying_known_reals=[
             "time_idx",
+            'hour',
             "temperature",
             "windspeed",
             "humidity",
             "precipitation",
             "insolation",
-            'cumhol',
-            'hour2'
+            'cumhol'
         ],
         target_normalizer=GroupNormalizer(groups=["num"], transformation="softplus"),
         time_varying_unknown_categoricals=[],

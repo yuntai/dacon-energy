@@ -4,4 +4,3 @@ statsmodels
 hyperopt
 pytorch_lightning
 pytorch_forecasting
-wandb
