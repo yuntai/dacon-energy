@@ -39,8 +39,13 @@ tr_loader = tr_ds.to_dataloader(
     train=True, batch_size=batch_size, num_workers=12
 )
 va_loader = va_ds.to_dataloader(
-    train=False, batch_size=batch_size * 10, num_workers=12
+    train=False, batch_size=batch_size*10, num_workers=12
 )
+
+# calculate baseline mean absolute error, i.e. predict next value as the last available value from the history
+actuals = torch.cat([y for x, (y, weight) in iter(va_loader)])
+baseline_predictions = Baseline().predict(va_loader)
+print("baseline smape=", SMAPE(reduction='mean')(actuals, baseline_predictions).mean().item())
 
 # TRAINING
 PARAMS = {
@@ -49,13 +54,13 @@ PARAMS = {
     'dropout': 0.19610151695402608,
     'hidden_continuous_size': 40,
     'attention_head_size': 4,
-    'learning_rate': 0.085
+    'learning_rate': 0.08
 }
 
 # stop training, when loss metric does not improve on validation set
 early_stop_callback = EarlyStopping(
     monitor="val_loss",
-    min_delta=1e-3,
+    min_delta=1e-4,
     patience=10,
     verbose=True,
     mode="min"
@@ -90,6 +95,7 @@ tft = TemporalFusionTransformer.from_dataset(
     loss=loss_fn,
     log_interval=10,  # log example every 10 batches
     reduce_on_plateau_patience=4,  # reduce learning automatically
+    logging_metrics=[SMAPE()]
 )
 print(f"Number of parameters in network: {tft.size()/1e3:.1f}k")
 
@@ -99,8 +105,6 @@ trainer.fit(
     train_dataloader=tr_loader,
     val_dataloaders=va_loader
 )
-
-# evaluate
 
 # load the best model according to the validation loss (given that
 # we use early stopping, this is not necessarily the last epoch)

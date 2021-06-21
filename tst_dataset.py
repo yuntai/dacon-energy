@@ -24,9 +24,10 @@ def load_dataset(dataroot="./data", nums=[]):
     col_ix = train_df.columns.get_loc("datetime")
     train_df['time_idx'] = (train_df.loc[:, 'datetime'] - train_df.iloc[0, col_ix]).astype('timedelta64[h]').astype('int')
     data = train_df
+    #data = train_df[(train_df.time_idx < 1872)].copy()
 
-    max_prediction_length = 24*7*2  # forecast 2 weeks
-    max_encoder_length = 24*7*5 # use 5 weeks of history
+    max_encoder_length = 24*7*5 # use up to 6 weeks of history
+    max_prediction_length = 24*7*2  # forecast 1 week
     training_cutoff = data["time_idx"].max() - max_prediction_length
 
     data["log_target"] = np.log(data.target + 1e-8)
@@ -55,8 +56,8 @@ def load_dataset(dataroot="./data", nums=[]):
             "humidity",
             "precipitation",
             "insolation",
-            "hour",
-            "cumhol"
+            'cumhol',
+            'hour2'
         ],
         target_normalizer=GroupNormalizer(groups=["num"], transformation="softplus"),
         time_varying_unknown_categoricals=[],

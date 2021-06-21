@@ -24,6 +24,8 @@ def date_prep(df):
     df['day'] = df['datetime'].dt.day
     df['month'] = df['datetime'].dt.month
 
+    df['hour2'] = (df['hour']/3).astype(int)
+
     special_days = ['2020-06-06', '2020-08-15', '2020-08-17']
     df['holiday'] = df['dow'].isin([5,6]).astype(int)
     df.loc[df.date.isin(special_days), 'holiday'] = 1
@@ -36,6 +38,8 @@ def date_prep(df):
     df1 = h.cumsum() - h.cumsum().where(~h).ffill().fillna(0).astype(int).iloc[::-1]
     df1 = df1.to_frame().reset_index().rename({'holiday': "cumhol"}, axis=1)
     df = df.merge(df1, on='date', how='left')
+
+    #df['cumhol'] = df.cumhol.astype(str).astype('category')
 
     return df
 
