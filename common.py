@@ -49,8 +49,8 @@ def read_df(dataroot, nums=[]):
 
     dataroot = pathlib.Path(dataroot) if type(dataroot) == str else dataroot
 
-    train_df = pd.read_csv(dataroot/'train.csv', header=0, names=train_columns)
-    test_df = pd.read_csv(dataroot/'test.csv', header=0, names=test_columns)
+    train_df = pd.read_csv(dataroot/'train.csv', skiprows=[0], names=train_columns)
+    test_df = pd.read_csv(dataroot/'test.csv', skiprows=[0], names=test_columns)
 
     if len(nums) > 0:
         train_df = train_df[train_df.num.isin(nums)]
