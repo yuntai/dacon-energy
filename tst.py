@@ -24,6 +24,7 @@ parser = argparse.ArgumentParser();
 parser.add_argument('--num', '-n', type=int, default=-1)
 parser.add_argument('--seed', type=int, default=42)
 parser.add_argument('--logdir', type=str, default="./logs")
+parser.add_argument('--gpu', type=int, default=0)
 args = parser.parse_args()
 print(args)
 
@@ -73,7 +74,7 @@ logger = TensorBoardLogger(args.logdir)  # log to tensorboard
 # create trainer
 trainer = pl.Trainer(
     max_epochs=50,
-    gpus=[0],
+    gpus=[args.gpu],
     #gpus=[0,1],  # train on CPU, use gpus = [0] to run on GPU
     #accelerator='dp',
     gradient_clip_val=PARAMS['gradient_clip_val'],
