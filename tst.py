@@ -21,16 +21,23 @@ from pytorch_forecasting.metrics import QuantileLoss, SMAPE, RMSE, MAE, Composit
 from pytorch_forecasting.models import TemporalFusionTransformer, Baseline
 
 parser = argparse.ArgumentParser();
-parser.add_argument('--num', '-n', type=int, default=-1)
 parser.add_argument('--seed', type=int, default=42)
 parser.add_argument('--logdir', type=str, default="./logs")
 parser.add_argument('--gpu', type=int, default=0)
+parser.add_argument('--encoder_length', '-e', type=int, default=5)
+parser.add_argument('--prediction_length', '-l', type=int, default=2)
+parser.add_argument('--trim', '-t', type=int, default=0)
 args = parser.parse_args()
 print(args)
 
 from tst_dataset import load_dataset
 
-tr_ds, va_ds = load_dataset("./data")
+tr_ds, va_ds = load_dataset(
+    "./data",
+    encoder_length=args.encoder_length,
+    prediction_length=args.prediction_length,
+    trim=args.trim
+)
 
 # create dataloaders for model
 batch_size = 128
