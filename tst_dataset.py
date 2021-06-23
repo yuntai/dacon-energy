@@ -18,17 +18,20 @@ import common
 import pandas as pd
 import numpy as np
 
-def load_dataset(dataroot="./data", nums=[]):
+def load_dataset(dataroot="./data", encoder_length=5, prediction_length=2, trim=0):
     train_df, test_df = common.prep_tst(dataroot)
 
     col_ix = train_df.columns.get_loc("datetime")
     train_df['time_idx'] = (train_df.loc[:, 'datetime'] - train_df.iloc[0, col_ix]).astype('timedelta64[h]').astype('int')
     #data = train_df
-    cutoff = train_df.time_idx.max() - 24*7
-    data = train_df.loc[train_df.time_idx <= cutoff].copy() # leave one week
+    if trim > 0:
+        cutoff = train_df.time_idx.max() - trim
+        data = train_df.loc[train_df.time_idx <= cutoff].copy() # leave one week
+    else:
+        data = train_df
 
-    max_encoder_length = 24*7*5 # use up to 8 weeks of history
-    max_prediction_length = 24*7*1  # forecast 1 week
+    max_encoder_length = 24*7*encoder_length
+    max_prediction_length = 24*7*prediction_length
     training_cutoff = data["time_idx"].max() - max_prediction_length
 
     data["log_target"] = np.log(data.target + 1e-8)

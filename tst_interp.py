@@ -18,7 +18,7 @@ from pytorch_forecasting.metrics import SMAPE, PoissonLoss, QuantileLoss
 from pytorch_forecasting.models.temporal_fusion_transformer.tuning import optimize_hyperparameters
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--path", "-p", type=str, default="./logs/default/version_0/checkpoints/epoch=22-step=689.ckpt")
+parser.add_argument("--path", "-p", type=str, default="./logs/default/version_16/checkpoints/epoch=24-step=749.ckpt")
 args = parser.parse_args()
 
 best_tft = TemporalFusionTransformer.load_from_checkpoint(args.path)
@@ -34,21 +34,25 @@ va_loader = va_ds.to_dataloader(
     train=False, batch_size=batch_size*10, num_workers=12
 )
 
-raw_predictions, x = best_tft.predict(va_loader, mode="raw", return_x=True)
-interpretation = best_tft.interpret_output(raw_predictions, reduction="sum")
-best_tft.plot_interpretation(interpretation)
-plt.show()
-
-# show wrost performer
+# calcualte metric by which to display
 actuals = torch.cat([y[0] for x, y in iter(va_loader)])
 predictions = best_tft.predict(va_loader)
-
-# calcualte metric by which to display
-predictions = best_tft.predict(va_loader)
 mean_losses = SMAPE(reduction="none")(predictions, actuals).mean(1)
-indices = mean_losses.argsort(descending=True)  # sort losses
-for idx in range(10):  # plot 10 examples
-    best_tft.plot_prediction(
-        x, raw_predictions, idx=indices[idx], add_loss_to_title=SMAPE(quantiles=best_tft.loss.quantiles)
-    );
-
+print(mean_losses)
+print(mean_losses.mean())
+#import sys
+#sys.exit(0)
+#
+## show wrost performer
+#
+##indices = mean_losses.argsort(descending=True)  # sort losses
+##for idx in range(10):  # plot 10 examples
+##    best_tft.plot_prediction(
+##        x, raw_predictions, idx=indices[idx], add_loss_to_title=SMAPE(quantiles=best_tft.loss.quantiles)
+##    );
+##
+#
+#raw_predictions, x = best_tft.predict(va_loader, mode="raw", return_x=True)
+#interpretation = best_tft.interpret_output(raw_predictions, reduction="sum")
+#best_tft.plot_interpretation(interpretation)
+#plt.show()
