@@ -25,7 +25,6 @@ parser.add_argument('--seed', type=int, default=42)
 parser.add_argument('--logdir', type=str, default="./logs")
 parser.add_argument('--gpu', type=int, default=0)
 parser.add_argument('--encoder_length', '-e', type=int, default=5)
-parser.add_argument('--trim', '-t', type=int, default=0)
 args = parser.parse_args()
 print(args)
 

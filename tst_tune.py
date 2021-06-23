@@ -25,7 +25,8 @@ args = parser.parse_args()
 print(args)
 
 from tst_dataset import load_dataset
-tr_ds, va_ds = load_dataset("./data")
+tr_ds, va_ds = load_dataset("./data",
+                            encoder_length_in_weeks=5)
 
 # create dataloaders for model
 batch_size = 128
@@ -57,11 +58,10 @@ study = optimize_hyperparameters(
     verbose=2
 )
 
-# save study results - also we can resume tuning at a later point in time
+# show best hyperparameters
+print(study.best_trial.params)
 with open("test_study.pkl", "wb") as fout:
     pickle.dump(study, fout)
-    # show best hyperparameters
-print(study.best_trial.params)
 
 if False:
     # LR finder
