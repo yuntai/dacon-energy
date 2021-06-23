@@ -41,7 +41,7 @@ def date_prep(df):
 
     return df
 
-def read_df(dataroot, nums=[]):
+def read_df(dataroot):
     train_columns = ['num','datetime','target','temperature','windspeed','humidity','precipitation','insolation','nelec_cool_flag','solar_flag']
     test_columns = [c for c in train_columns if c != 'target']
 
@@ -49,10 +49,6 @@ def read_df(dataroot, nums=[]):
 
     train_df = pd.read_csv(dataroot/'train.csv', skiprows=[0], names=train_columns)
     test_df = pd.read_csv(dataroot/'test.csv', skiprows=[0], names=test_columns)
-
-    if len(nums) > 0:
-        train_df = train_df[train_df.num.isin(nums)]
-        test_df = test_df[test_df.num.isin(nums)]
 
     __sz = train_df.shape[0]
 
@@ -79,9 +75,12 @@ def interpolate(test_df):
         if method == 'quadratic':
             test_df[col] = test_df[col].interpolate(method='linear')
 
-def prep_tst(dataroot, nums=[]):
-    train_df, test_df = read_df(dataroot, nums)
+def prep_tst(dataroot):
+    train_df, test_df = read_df(dataroot)
+    test_df = test_df.drop(['nelec_cool_flag','solar_flag'], axis=1)
 
+    # interpolate na in test_df
+    test_df = test_df.merge(train_df.groupby("num").first()[['nelec_cool_flag','solar_flag']].reset_index(), on="num", how="left")
     interpolate(test_df)
 
     s = train_df[train_df.datetime=='2020-06-01 00:00:00'].groupby(['temperature', 'windspeed']).ngroup()
@@ -90,13 +89,22 @@ def prep_tst(dataroot, nums=[]):
 
     sz = train_df.shape[0]
 
-    combined_df = pd.concat([train_df, test_df])
-    combined_df = combined_df.merge(mgrps, on='num', how='left')
+    df = pd.concat([train_df, test_df])
+    df = df.merge(mgrps, on='num', how='left')
 
-    combined_df = add_feats(combined_df)
+    df = add_feats(df)
 
-    train_df = combined_df.iloc[:sz].copy()
-    test_df = combined_df.iloc[sz:].copy()
+    df["log_target"] = np.log(df.target + 1e-8)
+
+    cate_cols = ['num', "mgrp", 'holiday', 'dow', 'cluster', 'hot', 'nelec_cool_flag', 'solar_flag']
+    for col in cate_cols:
+        df[col] = df[col].astype(str).astype('category')
+
+    __ix = df.columns.get_loc('datetime')
+    df['time_idx'] = (df.loc[:, 'datetime'] - df.iloc[0, __ix]).astype('timedelta64[h]').astype('int')
+
+    train_df = df.iloc[:sz].copy()
+    test_df = df.iloc[sz:].copy()
 
     return train_df, test_df
 
