@@ -8,6 +8,8 @@ import os
 import json
 import datetime
 
+CATE_COLS = ['num', "mgrp", 'holiday', 'dow', 'cluster', 'hot', 'nelec_cool_flag', 'solar_flag']
+
 cluster = {
     0: [19, 20, 21, 49, 50, 51],
     1: [1, 5, 9, 34],
@@ -96,8 +98,7 @@ def prep_tst(dataroot):
 
     df["log_target"] = np.log(df.target + 1e-8)
 
-    cate_cols = ['num', "mgrp", 'holiday', 'dow', 'cluster', 'hot', 'nelec_cool_flag', 'solar_flag']
-    for col in cate_cols:
+    for col in CATE_COLS:
         df[col] = df[col].astype(str).astype('category')
 
     __ix = df.columns.get_loc('datetime')

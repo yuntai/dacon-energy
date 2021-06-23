@@ -18,14 +18,13 @@ import common
 import pandas as pd
 import numpy as np
 
-def load_dataset(dataroot="./data", encoder_length_in_week=5)
+def load_dataset(dataroot="./data", encoder_length_in_weeks=5):
     train_df, test_df = common.prep_tst(dataroot)
     data = train_df
 
-    max_encoder_length = 24*7*encoder_length_in_week
+    max_encoder_length = 24*7*encoder_length_in_weeks
     max_prediction_length = 24*7
     training_cutoff = data["time_idx"].max() - max_prediction_length
-
 
     tr_ds = TimeSeriesDataSet(
         data[lambda x: x.time_idx <= training_cutoff],
@@ -36,7 +35,7 @@ def load_dataset(dataroot="./data", encoder_length_in_week=5)
         max_encoder_length=max_encoder_length,
         min_prediction_length=max_prediction_length//2,
         max_prediction_length=max_prediction_length,
-        time_varying_known_categoricals=cate_cols,
+        time_varying_known_categoricals=common.CATE_COLS,
         static_categoricals=["num", "mgrp", "cluster"],
         # group of categorical variables can be treated as one variable
         #variable_groups={"special_days": special_days},
@@ -71,4 +70,4 @@ def load_dataset(dataroot="./data", encoder_length_in_week=5)
         tr_ds, data, predict=True, stop_randomization=True
     )
 
-    return tr_ds, va_ds, data
+    return tr_ds, va_ds
