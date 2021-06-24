@@ -8,7 +8,8 @@ from pytorch_forecasting.models import TemporalFusionTransformer
 
 parser = argparse.ArgumentParser();
 parser.add_argument('--gpu', type=int, default=0)
-parser.add_argument("--path", "-p", type=str, default="./logs/default/version_0/checkpoints/epoch=39-step=1199.ckpt")
+parser.add_argument("--path", "-p", type=str, default="./models/seed=0-epoch=065-train_loss=0.02.ckpt")
+parser.add_argument("--outfn", "-o", type=str)
 args = parser.parse_args()
 
 best_tft = TemporalFusionTransformer.load_from_checkpoint(args.path)
@@ -32,3 +33,12 @@ new_raw_predictions, new_x = best_tft.predict(new_prediction_data, mode="raw", r
 
 #for idx in range(10):  # plot 10 examples
 #    best_tft.plot_prediction(new_x, new_raw_predictions, idx=idx, show_future_observed=False);
+
+sub_df = pd.read_csv("./data/sample_submission.csv")
+num_labels = best_tft.dataset_parameters['categorical_encoders']['num'].classes_
+preds = new_raw_predictions['prediction'].squeeze()
+
+for n, ix in num_labels.items():
+    sub_df.loc[sub_df.num_date_time.str.startswith(f"{n} "), 'answer'] = preds[ix].numpy()
+
+sub_df.to_csv(args.outfn, index=False)
