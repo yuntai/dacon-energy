@@ -69,7 +69,7 @@ logger = TensorBoardLogger(args.logdir)  # log to tensorboard
 checkpoint_callback = ModelCheckpoint(
     monitor='train_loss',
     dirpath='./models',
-    filename='{epoch:03d}-{train_loss:.2f}',
+    filename='{seed}-{epoch:03d}-{train_loss:.2f}',
     save_top_k=10
 )
 lrs = [0.05099279397234306, 0.05099279397234306, 0.05099279397234306, 0.05099279397234306,
