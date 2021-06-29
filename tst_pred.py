@@ -8,7 +8,7 @@ from pytorch_forecasting.models import TemporalFusionTransformer
 
 parser = argparse.ArgumentParser();
 parser.add_argument('--gpu', type=int, default=0)
-parser.add_argument("--path", "-p", type=str, default="./models/seed=0-epoch=065-train_loss=0.02.ckpt")
+parser.add_argument("--path", "-p", type=str)
 parser.add_argument("--outfn", "-o", type=str)
 args = parser.parse_args()
 

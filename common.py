@@ -81,8 +81,8 @@ def prep_tst(dataroot):
     train_df, test_df = read_df(dataroot)
     test_df = test_df.drop(['nelec_cool_flag','solar_flag'], axis=1)
 
-    # interpolate na in test_df
     test_df = test_df.merge(train_df.groupby("num").first()[['nelec_cool_flag','solar_flag']].reset_index(), on="num", how="left")
+    # interpolate na in test_df
     interpolate(test_df)
 
     s = train_df[train_df.datetime=='2020-06-01 00:00:00'].groupby(['temperature', 'windspeed']).ngroup()
@@ -112,15 +112,7 @@ def prep_tst(dataroot):
 def add_feats(df):
     df.reset_index(drop=True, inplace=True)
 
-    #df['THI'] = 9/5*df['temperature'] - 0.55*(1-df['humidity']/100)*(9/5*df['temperature']-26) + 32
-
-    #for num, g in df.groupby('num'):
-    #    cdh = (g['temperature']-26).rolling(window=12, min_periods=1).sum()
-    #    df.loc[cdh.index, 'CDH'] = cdh
-
-    #cols = ['temperature', 'windspeed', 'humidity', 'precipitation', 'insolation']
     cols = ['target']
-    #cols = ['target']
     stats = ['mean']
 
     # target null in test set to null for other columns care must be taken
@@ -147,7 +139,5 @@ def add_feats(df):
         col_mapper = {c:f"{s}_{c}" for c in cols}
         tr = g[cols].transform(s).rename(col_mapper, axis=1)
         df = pd.concat([df, tr], axis=1)
-
-    #df['THI_CAT'] = pd.cut(df.THI, [0, 68, 75, 80, 1000], right=False, labels=['THI_1', 'THI_2', 'THI_3', 'THI_4'])
 
     return df
