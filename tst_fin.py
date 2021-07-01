@@ -1,5 +1,3 @@
-# autor: Yuntai KYONG (yuntai.kyong@gmail.com)
-
 #GPU memory usage:
 #23546MiB / 24263MiB
 
